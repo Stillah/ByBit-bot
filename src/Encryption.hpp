@@ -9,25 +9,19 @@
 
 namespace Encryption {
 
-std::string GeneratePostSignature(const nlohmann::json &parameters, const BotBase &bot);
-std::string GenerateGetSignature(const nlohmann::json &parameters, const BotBase &bot);
+std::string GeneratePostSignature(const nlohmann::json &parameters, const BotBase &bot, const std::string& Timestamp);
+std::string GenerateGetSignature(const nlohmann::json &parameters, const BotBase &bot, const std::string& Timestamp);
 std::string ComputeSignature(const std::string &data, const BotBase &bot);
 std::string GenerateQueryString(const nlohmann::json &parameters);
 
-std::string GeneratePostSignature(const nlohmann::json &parameters, const BotBase &bot) {
+std::string GeneratePostSignature(const nlohmann::json &parameters, const BotBase &bot, const std::string& Timestamp) {
   std::string paramJson = parameters.dump();
-  auto Timestamp = std::to_string(
-    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
-      + 3000); //current time in milliseconds + 3000 (probably not needed if time on computer is sync properly)
   std::string rawData = Timestamp + bot.api_key + bot.recvWindow + paramJson;
   return ComputeSignature(rawData, bot);
 }
 
-std::string GenerateGetSignature(const nlohmann::json &parameters, const BotBase &bot) {
+std::string GenerateGetSignature(const nlohmann::json &parameters, const BotBase &bot, const std::string& Timestamp) {
   std::string queryString = GenerateQueryString(parameters);
-  auto Timestamp = std::to_string(
-    std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
-      + 3000); //current time in milliseconds + 3000 (probably not needed if time on computer is sync properly)
   std::string rawData = Timestamp + bot.api_key + bot.recvWindow + queryString;
   return ComputeSignature(rawData, bot);
 }

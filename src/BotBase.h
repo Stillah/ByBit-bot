@@ -2,7 +2,8 @@
 #include <string>
 
 struct BotBase {
-  BotBase();
+  BotBase(const std::string&);
+  BotBase() = delete;
   BotBase(const BotBase &) = delete;
   BotBase &operator=(const BotBase &) = delete;
   BotBase(BotBase &&) = delete;
@@ -13,5 +14,6 @@ struct BotBase {
   std::string ticker;
   std::string host;
   std::string recvWindow;
+  std::string port;
   double leverage;
 };

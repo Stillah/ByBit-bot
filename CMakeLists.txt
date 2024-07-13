@@ -15,7 +15,7 @@ set(CMAKE_CXX_STANDARD 23)
 find_package(ZLIB REQUIRED)
 find_package(nlohmann_json REQUIRED)
 find_package(OpenSSL REQUIRED) #Needed for part of boost/asio
-find_package(Boost REQUIRED COMPONENTS asio beast)
+find_package(Boost REQUIRED COMPONENTS asio beast json)
 
 #find_package(cpr REQUIRED)
 #find_package(httplib REQUIRED)
