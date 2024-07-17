@@ -13,6 +13,7 @@ BotBase::BotBase(const std::string& fileName) {
     secret_key = parameters["secret_key"];
     ticker = parameters["ticker"];
     host = parameters["host"];
+    webSocket = parameters["webSocket"];
     recvWindow = parameters["recvWindow"];
     leverage = parameters["leverage"];
     port = parameters["port"];

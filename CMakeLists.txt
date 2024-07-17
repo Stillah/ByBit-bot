@@ -26,6 +26,8 @@ add_executable(COMPLICATED
         src/BotBase.h
         src/Encryption.hpp
         src/Strategy.hpp
+        src/ByBit.cpp
+        src/ByBit.h
 )
 
 target_sources(COMPLICATED PRIVATE src/main.cpp)

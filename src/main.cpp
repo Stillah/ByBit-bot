@@ -2,8 +2,8 @@
 #include "Strategy.hpp"
 
 int main() {
-  BotBase bot("parameters.json");
-  Strategy(bot);
+  std::ios_base::sync_with_stdio(false); std::cout.tie(nullptr); std::cin.tie(nullptr);
+  Strategy("parameters.json");
 
   return 0;
 }
