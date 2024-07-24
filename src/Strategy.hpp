@@ -8,27 +8,27 @@
 #include "ByBit.h"
 #include "BotBase.h"
 
+#define currTime duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count()
 using json = nlohmann::json;
 
+// TODO: make async_ping with boost
 void Strategy(const std::string &file) {
   ByBit bybit(file);
   try {
-    if (bybit.is_socket_open()) {
-      json subscription_message = {
-        {"op", "subscribe"},
-        {"args", {"wallet"}}
-      };
-      bybit.write_Socket(subscription_message.dump());
-    }
+    if (!bybit.socket_is_opened()) return;
 
-    bybit.makeLongOrder();
+    json subscription_message{ {"op", "subscribe"}, {"args", {"order.linear"}} };
+    bybit.write_private_Socket(subscription_message.dump());
+
+    bybit.placeOrders(bybit.getTickerPrice().first);
     bybit.debug();
+    bybit.cancelOrders();
 
-    while (true) {
-      bybit.read_Socket();
-      std::cout << bybit.get_socket_data() << std::endl;
+    for (;;) {
+      bybit.read_private_Socket();  // blocking call
+      std::cout << json::parse(bybit.get_socket_data()).dump(2) << std::endl;
       bybit.buffer_clear();
     }
-    bybit.webSocket_close();
-  } catch (std::exception &e) { std::cout << e.what() << "\n"; }
+  }
+  catch (std::exception &e) { std::cout << e.what() << "\n"; }
 }

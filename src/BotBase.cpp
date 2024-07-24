@@ -4,7 +4,7 @@
 #include "BotBase.h"
 using json = nlohmann::json;
 
-BotBase::BotBase(const std::string& fileName) {
+BotBase::BotBase(const std::string &fileName) {
   std::ifstream file(fileName, std::ios::in);
   try {
     if (!fileName.contains(".json")) throw std::invalid_argument("File needs to be .json");
@@ -13,13 +13,16 @@ BotBase::BotBase(const std::string& fileName) {
     secret_key = parameters["secret_key"];
     ticker = parameters["ticker"];
     host = parameters["host"];
-    webSocket = parameters["webSocket"];
+    webSocketPrivate = parameters["webSocketPrivate"];
+    webSocketPublic = parameters["webSocketPublic"];
     recvWindow = parameters["recvWindow"];
     leverage = parameters["leverage"];
     port = parameters["port"];
+    quantity = parameters["quantityBaseCoin"];
     file.close();
-  } catch(std::exception& e) {
-    std::cerr << e.what()<< std::endl;
+  }
+  catch (std::exception &e) {
+    std::cerr << e.what() << std::endl;
     assert(false);
   }
 }

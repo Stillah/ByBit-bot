@@ -13,8 +13,10 @@ struct BotBase {
   std::string secret_key;
   std::string ticker;
   std::string host;
-  std::string webSocket;
+  std::string webSocketPrivate;
+  std::string webSocketPublic;
   std::string recvWindow;
   std::string port;
-  double leverage;
+  std::string quantity;
+  std::string leverage;
 };
