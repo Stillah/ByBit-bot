@@ -26,8 +26,12 @@ using json = nlohmann::json;
 class ByBit {
   public:
 
-  BotBase bot;
   explicit ByBit(const std::string &);
+  ByBit() = delete;
+  ByBit(const ByBit &) = delete;
+  ByBit &operator=(const ByBit &) = delete;
+  ByBit(ByBit &&) = delete;
+  ByBit &operator=(ByBit &&) = delete;
   ~ByBit();
 
   void read_private_Socket();
@@ -36,61 +40,71 @@ class ByBit {
   void write_private_Socket(const std::string &);
   void write_public_Socket(const std::string &);
   void webSocket_close();
-  std::string get_socket_data();
+  std::string get_socket_data() const noexcept;
+  void sendPing();
 
   void cancelOrders();
-  void placeOrders(double);
+  void placeBoth(std::pair<double, double>, const std::string &, const std::string &);
+  void placeLong(double, const std::string &);
+  void placeShort(double, const std::string &);
+  void changeOrder(double, const std::string &);
   void setLeverage();
   std::pair<double, double> getTickerPrice();
   void getInstrumentInfo();
+
   void debug();
-  void buffer_clear();
+  void buffer_clear() noexcept;
+  inline std::string priceToStr(double price) noexcept;
+  std::string getTickerName() const noexcept;
+  void init_private_webSocket();
 
   private:
 
-  void init_http();
-  void init_private_webSocket();
-  void init_public_webSocket();
-  void initPostReq();
   void authenticate();
-  void initGetReq();
-  void initCancelReq();
+  void init_http();
 
-  double delta;
-  std::string priceFmt{"0:.2f"}, qtyFmt{"0:.3f"};
+  void init_public_webSocket();
+  [[nodiscard]] http::request<http::string_body> getBasePostReq(const std::string &) const;
+  [[nodiscard]] http::request<http::string_body> getBaseGetReq(const std::string &) const;
+  inline void preparePostReq(const json &, http::request<http::string_body> &) const;
+  //void timerExpired(const boost::system::error_code &ec);
+  void initOrderReq();
+  void initPriceReq();
+  void initCancelReq();
+  void initAmendRequest();
+
+  BotBase bot;
+  double delta, takeProfit, stopLoss;
+  std::string priceFmt, qtyFmt;
 
   net::io_context ioc, ioc_webSocket;
+  //net::steady_timer m_timer;
   ssl::context ctx{ssl::context::tlsv12_client}, ctx_webSocket{ssl::context::tlsv12_client};
   tcp::resolver resolver{ioc}, resolver_webSocket{ioc_webSocket};
   Stream stream{ioc, ctx};
-  beast::flat_buffer buffer;
-  http::response<http::dynamic_body> res;
-  http::request<http::string_body> orderRequest, getRequest, cancelRequest;
+  beast::flat_buffer buffer, wsBuffer;
+  http::response<http::dynamic_body> cancelRes, orderRes, changeRes, res;
+  http::request<http::string_body> orderRequest, priceRequest, cancelRequest, amendRequest;
   websocket::stream<beast::ssl_stream<tcp::socket>> wsPublic{ioc_webSocket, ctx_webSocket},
     wsPrivate{ioc_webSocket, ctx_webSocket};
 
-  json cancelParams{{"category", "linear"}};
-  json ordersParams{
-    {"category", "linear"},
-    {
-      "request", {
-      {{"side", "Buy"},
-       {"orderType", "Limit"},
-       {"isLeverage", 1},
-       {"positionIdx", 1},
-       {"tpTriggerBy", "LastPrice"},
-       {"slTriggerBy", "LastPrice"}},
+  json amendParams = {{"category", "linear"}};
+  json cancelParams = {{"category", "linear"},
+                       {"orderFilter", "Order"}};
+  json orderParams = {{"category", "linear"},
+                      {"request", {}}};
 
-      {{"side", "Sell"},
-       {"orderType", "Limit"},
-       {"isLeverage", 1},
-       {"positionIdx", 2},
-       {"tpTriggerBy", "LastPrice"},
-       {"slTriggerBy", "LastPrice"}}
-    }
-    }
-  };
+  json longPosParams = {{"side", "Buy"},
+                        {"orderType", "Limit"},
+                        {"isLeverage", 1},
+                        {"positionIdx", 1},
+                        {"tpTriggerBy", "LastPrice"},
+                        {"slTriggerBy", "LastPrice"}};
+
+  json shortPosParams = {{"side", "Sell"},
+                         {"orderType", "Limit"},
+                         {"isLeverage", 1},
+                         {"positionIdx", 2},
+                         {"tpTriggerBy", "LastPrice"},
+                         {"slTriggerBy", "LastPrice"}};
 };
-
-
-

@@ -19,6 +19,8 @@ BotBase::BotBase(const std::string &fileName) {
     leverage = parameters["leverage"];
     port = parameters["port"];
     quantity = parameters["quantityBaseCoin"];
+    takeProfit = parameters["takeProfit"];
+    stopLoss = parameters["stopLoss"];
     file.close();
   }
   catch (std::exception &e) {

@@ -4,29 +4,40 @@
 
 
 ByBit::ByBit(const std::string &file) {
+  std::cerr << "Bot started construction\n";
   bot = BotBase(file);
   init_http();
-  initPostReq();
-  initGetReq();
+  initOrderReq();
+  initPriceReq();
   initCancelReq();
+  initAmendRequest();
   //init_public_webSocket();
   init_private_webSocket();
   setLeverage();
   getInstrumentInfo();
 
-  ordersParams["request"][0]["symbol"] = ordersParams["request"][1]["symbol"] = bot.ticker;
-  ordersParams["request"][0]["qty"] = ordersParams["request"][1]["qty"] =
-    (boost::format(qtyFmt) % (stod(bot.quantity) / 2)).str();
   cancelParams["request"][0]["symbol"] = cancelParams["request"][1]["symbol"] = bot.ticker;
+  longPosParams["symbol"] = shortPosParams["symbol"] = bot.ticker;
+  longPosParams["qty"] = shortPosParams["qty"] = priceToStr(stod(bot.quantity) / 2);
+  takeProfit = bot.takeProfit;
+  stopLoss = bot.stopLoss;
+  //m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
+
+  std::cerr << "Bot finished construction\n";
 }
 
-ByBit::~ByBit() { cancelOrders(); }
+ByBit::~ByBit() {
+  std::cerr << "Cancelling orders...\n";
+  cancelOrders();
+  webSocket_close();
+  std::cerr << "Orders cancelled\n";
+}
 
-void ByBit::read_private_Socket() { wsPrivate.read(buffer); }
+void ByBit::read_private_Socket() { wsPrivate.read(wsBuffer); }
 
-void ByBit::read_public_Socket() { wsPublic.read(buffer); }
+void ByBit::read_public_Socket() { wsPublic.read(wsBuffer); }
 
-bool ByBit::socket_is_opened() { return wsPrivate.is_open() && wsPublic.is_open(); }
+bool ByBit::socket_is_opened() { return wsPrivate.is_open() /*&& wsPublic.is_open()*/; }
 
 void ByBit::write_private_Socket(const std::string &text) { wsPrivate.write(net::buffer(text)); }
 
@@ -37,80 +48,116 @@ void ByBit::webSocket_close() {
   if (wsPublic.is_open()) wsPublic.close(websocket::close_code::none);
 }
 
-std::string ByBit::get_socket_data() { return beast::buffers_to_string(buffer.data()); }
+std::string ByBit::get_socket_data() const noexcept { return beast::buffers_to_string(wsBuffer.data()); }
 
-void ByBit::cancelOrders() {
-  std::string Timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>
-                                           (std::chrono::system_clock::now().time_since_epoch()).count());
-  cancelRequest.set("X-BAPI-TIMESTAMP", Timestamp);
-  cancelRequest.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(cancelParams, bot, Timestamp));
-  cancelRequest.body() = cancelParams.dump();
-  cancelRequest.prepare_payload();
-
-  http::write(stream, cancelRequest);
-  http::read(stream, buffer, res);
-  res.body().clear();
+void ByBit::sendPing() {
+  write_private_Socket(R"({"op":"ping"})");
+  std::cerr << "Ping sent\n";
 }
 
-void ByBit::placeOrders(double price) {
-  // change ordersParams, mainly price and TP/SL
-  ordersParams["request"][0]["price"] = (boost::format(priceFmt) % (price - delta)).str();
-  ordersParams["request"][0]["takeProfit"] = (boost::format(priceFmt) % (price + 2000 * delta)).str();
-  ordersParams["request"][0]["stopLoss"] = (boost::format(priceFmt) % (price - 4000 * delta)).str();
+void ByBit::cancelOrders() {
+  preparePostReq(cancelParams, cancelRequest);
+  http::write(stream, cancelRequest);
+  http::read(stream, buffer, cancelRes);
+  cancelRes.body().clear();
+}
 
-  ordersParams["request"][1]["price"] = (boost::format(priceFmt) % (price + delta)).str();
-  ordersParams["request"][1]["takeProfit"] = (boost::format(priceFmt) % (price - 2000 * delta)).str();
-  ordersParams["request"][1]["stopLoss"] = (boost::format(priceFmt) % (price + 4000 * delta)).str();
+//Maybe remove assert and ifs to lower latency
+void ByBit::placeBoth(std::pair<double, double> price, const std::string &longLinkId, const std::string &shortLinkId) {
+  auto [bidPrice, askPrice] = price;
 
-  std::string Timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>
-                                           (std::chrono::system_clock::now().time_since_epoch()).count());
-  orderRequest.set("X-BAPI-TIMESTAMP", Timestamp);
-  orderRequest.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(ordersParams, bot, Timestamp));
-  orderRequest.body() = ordersParams.dump();
-  orderRequest.prepare_payload();
+  orderParams["request"][0] = longPosParams;
+  orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
+  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
+  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  orderParams["request"][0]["orderLinkId"] = longLinkId;
 
+  orderParams["request"][1] = shortPosParams;
+  orderParams["request"][1]["price"] = priceToStr(askPrice + delta);
+  orderParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
+  orderParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  orderParams["request"][1]["orderLinkId"] = shortLinkId;
+
+  preparePostReq(orderParams, orderRequest);
   http::write(stream, orderRequest);
-  http::read(stream, buffer, res);
-  //res.body().clear();
+  http::read(stream, buffer, orderRes);
+  orderRes.body().clear();
+  //debug();
+  orderParams["request"].clear();
+  std::cerr << "Both orders placed\n";
+}
+
+void ByBit::placeLong(double bidPrice, const std::string &longLinkId) {
+  orderParams["request"][0] = longPosParams;
+  orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
+  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
+  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  orderParams["request"][0]["orderLinkId"] = longLinkId;
+
+  preparePostReq(orderParams, orderRequest);
+  http::write(stream, orderRequest);
+  http::read(stream, buffer, orderRes);
+  orderRes.body().clear();
+  //debug();
+  orderParams["request"].clear();
+  std::cerr << "Long order placed\n";
+}
+
+void ByBit::placeShort(double askPrice, const std::string &shortLinkId) {
+  orderParams["request"][0] = shortPosParams;
+  orderParams["request"][0]["price"] = priceToStr(askPrice + delta);
+  orderParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
+  orderParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  orderParams["request"][0]["orderLinkId"] = shortLinkId;
+
+  preparePostReq(orderParams, orderRequest);
+  http::write(stream, orderRequest);
+  http::read(stream, buffer, orderRes);
+  orderRes.body().clear();
+  //debug();
+  orderParams["request"].clear();
+  std::cerr << "Short order placed\n";
+}
+
+void ByBit::changeOrder(double price, const std::string &orderLinkId) {
+  amendParams["orderLinkId"] = orderLinkId;
+  amendParams["price"] = priceToStr(price);
+  amendParams["qty"] = priceToStr(stod(bot.quantity));
+  amendParams["takeProfit"] = priceToStr(price + price * (orderLinkId[0] == 'l' ? takeProfit : -takeProfit));
+  amendParams["stopLoss"] = priceToStr(price - price * (orderLinkId[0] == 'l' ? stopLoss : -stopLoss));
+
+  preparePostReq(amendParams, amendRequest);
+  http::write(stream, amendRequest);
+  http::read(stream, buffer, changeRes);
+  //debug();
+  changeRes.body().clear();
+  std::cerr << (orderLinkId[0] == 'l' ? "Long " : "Short ") << "order changed\n";
 }
 
 void ByBit::setLeverage() {
-  http::request<http::string_body> req{http::verb::post, "/v5/position/set-leverage", 11};
   json leverage = {
     {"category", "linear"},
     {"symbol", bot.ticker},
     {"buyLeverage", bot.leverage},
     {"sellLeverage", bot.leverage}
   };
+  auto req = getBasePostReq("/v5/position/set-leverage");
 
-  req.set(http::field::host, bot.host);
-  req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-  req.set("X-BAPI-API-KEY", bot.api_key);
-  req.set("X-BAPI-SIGN-TYPE", "2");
-  req.set("X-BAPI-RECV-WINDOW", bot.recvWindow);
-  req.set(http::field::content_type, "application/json");
-
-  std::string Timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>
-                                           (std::chrono::system_clock::now().time_since_epoch()).count());
-
-  req.set("X-BAPI-TIMESTAMP", Timestamp);
-  req.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(leverage, bot, Timestamp));
-  req.body() = leverage.dump();
-  req.prepare_payload();
-
+  preparePostReq(leverage, req);
   http::write(stream, req);
   http::read(stream, buffer, res);
+
   json answer = json::parse(beast::buffers_to_string(res.body().data()));
   if (answer["retCode"] != 0 && answer["retMsg"] != "leverage not modified")
-    std::cout << req << "\n" << answer << "\n";
+    std::cerr << req << "\n" << answer << "\n";
 
   res.body().clear();
-  buffer.clear();
+
 }
 
 //returns a pair of bidPrice and askPrice
 std::pair<double, double> ByBit::getTickerPrice() {
-  http::write(stream, getRequest);
+  http::write(stream, priceRequest);
   http::read(stream, buffer, res);
   auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
   res.body().clear();
@@ -119,11 +166,7 @@ std::pair<double, double> ByBit::getTickerPrice() {
 }
 
 void ByBit::getInstrumentInfo() {
-  http::request<http::string_body> req{http::verb::get, "/v5/market/instruments-info?category=linear&symbol=" +
-    bot.ticker, 11};
-  req.set(http::field::host, bot.host);
-  req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-  req.set(http::field::content_type, "application/json");
+  auto req = getBaseGetReq("/v5/market/instruments-info?category=linear&symbol=" + bot.ticker);
   http::write(stream, req);
   http::read(stream, buffer, res);
 
@@ -133,27 +176,35 @@ void ByBit::getInstrumentInfo() {
   int8_t quantityScale = 0;
   bool flag = false;
   std::string qtyStep = response["result"]["list"][0]["lotSizeFilter"]["qtyStep"];
+  // digits after . in qty
   for (char c: qtyStep) {
     quantityScale += flag;
     if (c == '.') flag = true;
   }
-  //формат цены и количества (цифры после запятой), шаг цены, fees(?)
+  // формат цены и количества (цифры после запятой), шаг цены
   priceFmt = std::format("%1.{0}f", static_cast<std::string>(response["result"]["list"][0]["priceScale"]));
   qtyFmt = std::format("%1.{0}f", quantityScale);
   delta = stod(static_cast<std::string>(response["result"]["list"][0]["priceFilter"]["tickSize"]));
 }
 
 void ByBit::debug() {
-  //std::cout << orderRequest << "\n";
+  //std::cerr << amendRequest << "\n";
 
   try {
-    auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
-    std::cout << response.dump(2) << std::endl;
+    auto response = json::parse(beast::buffers_to_string(changeRes.body().cdata()));
+    std::cerr << response.dump(2) << std::endl;
   }
-  catch (...) { std::cout << beast::buffers_to_string(res.body().cdata()) << "\n"; }
+  catch (...) { std::cerr << beast::buffers_to_string(changeRes.body().cdata()) << "\n"; }
+  changeRes.body().clear();
 }
 
-void ByBit::buffer_clear() { buffer.clear(); }
+void ByBit::buffer_clear() noexcept { wsBuffer.clear(); }
+
+std::string ByBit::getTickerName() const noexcept { return bot.ticker; }
+
+inline std::string ByBit::priceToStr(double price) noexcept {
+  return (boost::format(priceFmt) % price).str();
+}
 
 void ByBit::authenticate() {
   int64_t expires = std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -162,7 +213,7 @@ void ByBit::authenticate() {
   std::string val = "GET/realtime" + std::to_string(expires);
   std::string signature = Encryption::ComputeSignature(val, bot);
 
-  json auth_msg = {
+  const json auth_msg = {
     {"op", "auth"},
     {"args", {bot.api_key, expires, signature}}
   };
@@ -173,7 +224,7 @@ void ByBit::authenticate() {
 void ByBit::init_http() {
   // Set SNI Hostname (many hosts need this to handshake successfully)
   if (!SSL_set_tlsext_host_name(stream.native_handle(), bot.host.c_str())) {
-    boost::system::error_code ec{static_cast<int>(::ERR_get_error()), boost::asio::error::get_ssl_category()};
+    boost::system::error_code ec{static_cast<int>(::ERR_get_error()), net::error::get_ssl_category()};
     throw boost::system::system_error{ec};
   }
   const auto results{resolver.resolve(bot.host, bot.port)};
@@ -208,36 +259,62 @@ void ByBit::init_public_webSocket() {
   wsPublic.handshake(bot.webSocketPublic, "/v5/public/spot");
 }
 
-void ByBit::initPostReq() {
-  http::request<http::string_body> req{http::verb::post, "/v5/order/create-batch", 11};
+[[nodiscard]] http::request<http::string_body> ByBit::getBasePostReq(const std::string &endpoint) const {
+  http::request<http::string_body> req{http::verb::post, endpoint, 11};
+
   req.set(http::field::host, bot.host);
   req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-
   req.set("X-BAPI-API-KEY", bot.api_key);
   req.set("X-BAPI-SIGN-TYPE", "2");
   req.set("X-BAPI-RECV-WINDOW", bot.recvWindow);
   req.set(http::field::content_type, "application/json");
-  orderRequest = req;
+  return req;
 }
 
-void ByBit::initGetReq() {
-  http::request<http::string_body> req{http::verb::get, "/v5/market/tickers?category=linear&symbol=" + bot.ticker, 11};
+[[nodiscard]] http::request<http::string_body> ByBit::getBaseGetReq(const std::string &endpoint) const {
+  http::request<http::string_body> req{http::verb::get, endpoint, 11};
+
   req.set(http::field::host, bot.host);
   req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
   req.set(http::field::content_type, "application/json");
-  getRequest = req;
+  return req;
+}
+
+inline void ByBit::preparePostReq(const json &data, http::request<http::string_body> &req) const {
+  std::string Timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>
+                                           (std::chrono::system_clock::now().time_since_epoch()).count());
+  req.set("X-BAPI-TIMESTAMP", Timestamp);
+  req.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(data, bot, Timestamp));
+  req.body() = data.dump();
+  req.prepare_payload();
+}
+
+//void ByBit::timerExpired(const boost::system::error_code &ec) {
+//  if (ec) {
+//    std::cerr << ec << "\n";
+//    return;
+//  }
+//
+//  std::cerr << "Ping sent\n";
+//  wsPrivate.ping(R"("op":"ping")");
+//  m_timer.expires_after(net::chrono::seconds(20));
+//  m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
+//}
+
+void ByBit::initOrderReq() {
+  orderRequest = getBasePostReq("/v5/order/create-batch");
+}
+
+void ByBit::initPriceReq() {
+  priceRequest = getBaseGetReq("/v5/market/tickers?category=linear&symbol=" + bot.ticker);
 }
 
 void ByBit::initCancelReq() {
   cancelParams["symbol"] = bot.ticker;
-  http::request<http::string_body> req{http::verb::post, "/v5/order/cancel-all", 11};
-  req.set(http::field::host, bot.host);
-  req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
-
-  req.set("X-BAPI-API-KEY", bot.api_key);
-  req.set("X-BAPI-SIGN-TYPE", "2");
-  req.set("X-BAPI-RECV-WINDOW", bot.recvWindow);
-  req.set(http::field::content_type, "application/json");
-  cancelRequest = req;
+  cancelRequest = getBasePostReq("/v5/order/cancel-all");
 }
 
+void ByBit::initAmendRequest() {
+  amendParams["symbol"] = bot.ticker;
+  amendRequest = getBasePostReq("/v5/order/amend");
+}

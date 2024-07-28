@@ -9,14 +9,7 @@ struct BotBase {
   BotBase(BotBase &&) = default;
   BotBase &operator=(BotBase &&) = default;
 
-  std::string api_key;
-  std::string secret_key;
-  std::string ticker;
-  std::string host;
-  std::string webSocketPrivate;
-  std::string webSocketPublic;
-  std::string recvWindow;
-  std::string port;
-  std::string quantity;
-  std::string leverage;
+  std::string api_key, secret_key, ticker, host, webSocketPrivate,
+  webSocketPublic, recvWindow, port, quantity, leverage;
+  double takeProfit, stopLoss;
 };

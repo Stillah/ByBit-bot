@@ -1,0 +1,186 @@
+{
+  "creationTime": 1721937524080,
+  "data": [
+    {
+      "accountIMRate": "0.006",
+      "accountLTV": "0.0117",
+      "accountMMRate": "0.0013",
+      "accountType": "UNIFIED",
+      "coin": [
+        {
+          "accruedInterest": "0",
+          "availableToBorrow": "",
+          "availableToWithdraw": "50000",
+          "bonus": "0",
+          "borrowAmount": "0",
+          "coin": "USDC",
+          "collateralSwitch": true,
+          "cumRealisedPnl": "0",
+          "equity": "50000",
+          "locked": "0",
+          "marginCollateral": true,
+          "spotHedgingQty": "0",
+          "totalOrderIM": "0",
+          "totalPositionIM": "0",
+          "totalPositionMM": "0",
+          "unrealisedPnl": "0",
+          "usdValue": "50008.2",
+          "walletBalance": "50000"
+        },
+        {
+          "accruedInterest": "0",
+          "availableToBorrow": "",
+          "availableToWithdraw": "117398.25801065",
+          "bonus": "0",
+          "borrowAmount": "0",
+          "coin": "USDT",
+          "collateralSwitch": true,
+          "cumRealisedPnl": "-298.67533811",
+          "equity": "117398.33062065",
+          "locked": "0",
+          "marginCollateral": true,
+          "spotHedgingQty": "0",
+          "totalOrderIM": "175.18008931",
+          "totalPositionIM": "175.22954573",
+          "totalPositionMM": "21.36604784",
+          "unrealisedPnl": "0.07261",
+          "usdValue": "117384.00802431",
+          "walletBalance": "117398.25801065"
+        }
+      ],
+      "totalAvailableBalance": "164425.45066531",
+      "totalEquity": "168648.72007053",
+      "totalInitialMargin": "1004.46450354",
+      "totalMaintenanceMargin": "228.70663839",
+      "totalMarginBalance": "165429.91516886",
+      "totalPerpUPL": "0.07260114",
+      "totalWalletBalance": "165429.84256772"
+    }
+  ],
+  "id": "221076996_wallet_1721937524080",
+  "topic": "wallet"
+}
+{
+  "creationTime": 1721937537689,
+  "data": [
+    {
+      "accountIMRate": "0.006",
+      "accountLTV": "0.0117",
+      "accountMMRate": "0.0013",
+      "accountType": "UNIFIED",
+      "coin": [
+        {
+          "accruedInterest": "0",
+          "availableToBorrow": "",
+          "availableToWithdraw": "50000",
+          "bonus": "0",
+          "borrowAmount": "0",
+          "coin": "USDC",
+          "collateralSwitch": true,
+          "cumRealisedPnl": "0",
+          "equity": "50000",
+          "locked": "0",
+          "marginCollateral": true,
+          "spotHedgingQty": "0",
+          "totalOrderIM": "0",
+          "totalPositionIM": "0",
+          "totalPositionMM": "0",
+          "unrealisedPnl": "0",
+          "usdValue": "49995.2",
+          "walletBalance": "50000"
+        },
+        {
+          "accruedInterest": "0",
+          "availableToBorrow": "",
+          "availableToWithdraw": "117398.25801065",
+          "bonus": "0",
+          "borrowAmount": "0",
+          "coin": "USDT",
+          "collateralSwitch": true,
+          "cumRealisedPnl": "-298.67533811",
+          "equity": "117398.62106065",
+          "locked": "0",
+          "marginCollateral": true,
+          "spotHedgingQty": "0",
+          "totalOrderIM": "175.18008931",
+          "totalPositionIM": "175.22954573",
+          "totalPositionMM": "21.36604784",
+          "unrealisedPnl": "0.36305",
+          "usdValue": "117363.51887295",
+          "walletBalance": "117398.25801065"
+        }
+      ],
+      "totalAvailableBalance": "164391.82128385",
+      "totalEquity": "168616.33557992",
+      "totalInitialMargin": "1004.45304419",
+      "totalMaintenanceMargin": "228.71343153",
+      "totalMarginBalance": "165396.27432804",
+      "totalPerpUPL": "0.36294144",
+      "totalWalletBalance": "165395.9113866"
+    }
+  ],
+  "id": "221076996_wallet_1721937537689",
+  "topic": "wallet"
+}
+{
+  "creationTime": 1721937537689,
+  "data": [
+    {
+      "accountIMRate": "0.005",
+      "accountLTV": "0.0117",
+      "accountMMRate": "0.0012",
+      "accountType": "UNIFIED",
+      "coin": [
+        {
+          "accruedInterest": "0",
+          "availableToBorrow": "",
+          "availableToWithdraw": "50000",
+          "bonus": "0",
+          "borrowAmount": "0",
+          "coin": "USDC",
+          "collateralSwitch": true,
+          "cumRealisedPnl": "0",
+          "equity": "50000",
+          "locked": "0",
+          "marginCollateral": true,
+          "spotHedgingQty": "0",
+          "totalOrderIM": "0",
+          "totalPositionIM": "0",
+          "totalPositionMM": "0",
+          "unrealisedPnl": "0",
+          "usdValue": "49995.2",
+          "walletBalance": "50000"
+        },
+        {
+          "accruedInterest": "0",
+          "availableToBorrow": "",
+          "availableToWithdraw": "117396.58916782",
+          "bonus": "0",
+          "borrowAmount": "0",
+          "coin": "USDT",
+          "collateralSwitch": true,
+          "cumRealisedPnl": "-300.34418094",
+          "equity": "117396.58916782",
+          "locked": "0",
+          "marginCollateral": true,
+          "spotHedgingQty": "0",
+          "totalOrderIM": "175.18008931",
+          "totalPositionIM": "0",
+          "totalPositionMM": "0",
+          "unrealisedPnl": "0",
+          "usdValue": "117361.48758766",
+          "walletBalance": "117396.58916782"
+        }
+      ],
+      "totalAvailableBalance": "164564.96715065",
+      "totalEquity": "168614.30429463",
+      "totalInitialMargin": "829.27589209",
+      "totalMaintenanceMargin": "207.35377214",
+      "totalMarginBalance": "165394.24304275",
+      "totalPerpUPL": "0",
+      "totalWalletBalance": "165394.24304275"
+    }
+  ],
+  "id": "221076996_wallet_1721937537690",
+  "topic": "wallet"
+}
