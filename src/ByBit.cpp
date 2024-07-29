@@ -3,7 +3,11 @@
 #include <boost/format.hpp>
 
 
-ByBit::ByBit(const std::string &file) {
+ByBit::ByBit(const std::string &file, std::string &longLinkIdRef, std::string &shortLinkIdRef)
+  : longLinkId(longLinkIdRef),
+    shortLinkId(shortLinkIdRef),
+    m_timer(ioc_webSocket),
+    chaseTimer(ioc_webSocket) {
   std::cerr << "Bot started construction\n";
   bot = BotBase(file);
   init_http();
@@ -18,11 +22,9 @@ ByBit::ByBit(const std::string &file) {
 
   cancelParams["request"][0]["symbol"] = cancelParams["request"][1]["symbol"] = bot.ticker;
   longPosParams["symbol"] = shortPosParams["symbol"] = bot.ticker;
-  longPosParams["qty"] = shortPosParams["qty"] = priceToStr(stod(bot.quantity) / 2);
-  takeProfit = bot.takeProfit;
-  stopLoss = bot.stopLoss;
-  //m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
-
+  longPosParams["qty"] = shortPosParams["qty"] = qtyToStr(bot.quantity / 2);
+  takeProfit = bot.takeProfit / 100;
+  stopLoss = bot.stopLoss / 100;
   std::cerr << "Bot finished construction\n";
 }
 
@@ -33,7 +35,19 @@ ByBit::~ByBit() {
   std::cerr << "Orders cancelled\n";
 }
 
-void ByBit::read_private_Socket() { wsPrivate.read(wsBuffer); }
+void ByBit::async_read_private_Socket() {
+  wsPrivate.async_read(wsBuffer, callback);
+}
+
+void ByBit::read_private_Socket() {
+  wsPrivate.read(wsBuffer);
+}
+
+void ByBit::ws_ioc_run() {
+  m_timer.async_wait([this](const boost::system::error_code &ec) { beginAsyncPings(ec); });
+  chaseTimer.async_wait([this](const boost::system::error_code &ec) { chasePrice(ec); });
+  ioc_webSocket.run();
+}
 
 void ByBit::read_public_Socket() { wsPublic.read(wsBuffer); }
 
@@ -50,88 +64,148 @@ void ByBit::webSocket_close() {
 
 std::string ByBit::get_socket_data() const noexcept { return beast::buffers_to_string(wsBuffer.data()); }
 
-void ByBit::sendPing() {
-  write_private_Socket(R"({"op":"ping"})");
-  std::cerr << "Ping sent\n";
+void ByBit::setCallback(const std::function<void(beast::error_code, size_t)> &new_callback) {
+  callback = new_callback;
 }
 
 void ByBit::cancelOrders() {
-  preparePostReq(cancelParams, cancelRequest);
+  preparePrivateReq(cancelParams, cancelRequest);
   http::write(stream, cancelRequest);
   http::read(stream, buffer, cancelRes);
+  std::cerr << beast::buffers_to_string(cancelRes.body().data());
   cancelRes.body().clear();
 }
 
 //Maybe remove assert and ifs to lower latency
-void ByBit::placeBoth(std::pair<double, double> price, const std::string &longLinkId, const std::string &shortLinkId) {
+void ByBit::placeBoth(std::pair<double, double> price) {
   auto [bidPrice, askPrice] = price;
 
+  // setting up long parameters
   orderParams["request"][0] = longPosParams;
   orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
   orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
   orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
   orderParams["request"][0]["orderLinkId"] = longLinkId;
 
+  // setting up short parameters
   orderParams["request"][1] = shortPosParams;
   orderParams["request"][1]["price"] = priceToStr(askPrice + delta);
   orderParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
   orderParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
   orderParams["request"][1]["orderLinkId"] = shortLinkId;
 
-  preparePostReq(orderParams, orderRequest);
+  preparePrivateReq(orderParams, orderRequest);
   http::write(stream, orderRequest);
   http::read(stream, buffer, orderRes);
   orderRes.body().clear();
-  //debug();
+
   orderParams["request"].clear();
   std::cerr << "Both orders placed\n";
 }
 
-void ByBit::placeLong(double bidPrice, const std::string &longLinkId) {
+void ByBit::placeLong(double bidPrice) {
   orderParams["request"][0] = longPosParams;
   orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
   orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
   orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
   orderParams["request"][0]["orderLinkId"] = longLinkId;
 
-  preparePostReq(orderParams, orderRequest);
+  preparePrivateReq(orderParams, orderRequest);
   http::write(stream, orderRequest);
-  http::read(stream, buffer, orderRes);
+  try { http::read(stream, buffer, orderRes); }
+  catch (std::exception &e) {
+    std::cerr << "placeLong exception\n";
+  }
   orderRes.body().clear();
-  //debug();
+
   orderParams["request"].clear();
   std::cerr << "Long order placed\n";
 }
 
-void ByBit::placeShort(double askPrice, const std::string &shortLinkId) {
+void ByBit::placeShort(double askPrice) {
   orderParams["request"][0] = shortPosParams;
   orderParams["request"][0]["price"] = priceToStr(askPrice + delta);
   orderParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
   orderParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
   orderParams["request"][0]["orderLinkId"] = shortLinkId;
 
-  preparePostReq(orderParams, orderRequest);
+  preparePrivateReq(orderParams, orderRequest);
   http::write(stream, orderRequest);
-  http::read(stream, buffer, orderRes);
+  try { http::read(stream, buffer, orderRes); }
+  catch (std::exception &e) {
+    std::cerr << "placeShort exception\n";
+  }
   orderRes.body().clear();
-  //debug();
+
   orderParams["request"].clear();
   std::cerr << "Short order placed\n";
 }
 
-void ByBit::changeOrder(double price, const std::string &orderLinkId) {
-  amendParams["orderLinkId"] = orderLinkId;
-  amendParams["price"] = priceToStr(price);
-  amendParams["qty"] = priceToStr(stod(bot.quantity));
-  amendParams["takeProfit"] = priceToStr(price + price * (orderLinkId[0] == 'l' ? takeProfit : -takeProfit));
-  amendParams["stopLoss"] = priceToStr(price - price * (orderLinkId[0] == 'l' ? stopLoss : -stopLoss));
+void ByBit::changeBoth(std::pair<double, double> price) {
+  auto [bidPrice, askPrice] = price;
 
-  preparePostReq(amendParams, amendRequest);
+  // setting up long changes
+  amendParams["request"][0]["symbol"] = bot.ticker;
+  amendParams["request"][0]["price"] = priceToStr(bidPrice - delta);
+  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
+  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  amendParams["request"][0]["orderLinkId"] = longLinkId;
+
+  // setting up short changes
+  amendParams["request"][1]["symbol"] = bot.ticker;
+  amendParams["request"][1]["price"] = priceToStr(askPrice);
+  amendParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
+  amendParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  amendParams["request"][1]["orderLinkId"] = shortLinkId;
+
+  preparePrivateReq(amendParams, amendRequest);
   http::write(stream, amendRequest);
-  http::read(stream, buffer, changeRes);
-  //debug();
+  try { http::read(stream, buffer, changeRes); }
+  catch (std::exception &e) {
+    std::cerr << "changeBoth exception\n";
+  }
+
   changeRes.body().clear();
-  std::cerr << (orderLinkId[0] == 'l' ? "Long " : "Short ") << "order changed\n";
+  amendParams["request"].clear();
+  //std::cerr << "Changed both orders\n";
+}
+
+void ByBit::changeLong(double bidPrice) {
+  amendParams["request"][0]["symbol"] = bot.ticker;
+  amendParams["request"][0]["price"] = priceToStr(bidPrice - delta);
+  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
+  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  amendParams["request"][0]["orderLinkId"] = longLinkId;
+
+  preparePrivateReq(amendParams, amendRequest);
+  http::write(stream, amendRequest);
+  try { http::read(stream, buffer, changeRes); }
+  catch (std::exception &e) {
+    std::cerr << "changeLong exception\n";
+  }
+
+  changeRes.body().clear();
+  amendParams["request"].clear();
+  //std::cerr << "Changed long order\n";
+}
+
+void ByBit::changeShort(double askPrice) {
+  amendParams["request"][0]["symbol"] = bot.ticker;
+  amendParams["request"][0]["price"] = priceToStr(askPrice);
+  amendParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
+  amendParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  amendParams["request"][0]["orderLinkId"] = shortLinkId;
+
+  preparePrivateReq(amendParams, amendRequest);
+  http::write(stream, amendRequest);
+  try { http::read(stream, buffer, changeRes); }
+  catch (std::exception &e) {
+    std::cerr << "changeShort exception\n";
+  }
+
+  changeRes.body().clear();
+  amendParams["request"].clear();
+  //std::cerr << "Changed short order\n";
 }
 
 void ByBit::setLeverage() {
@@ -143,7 +217,7 @@ void ByBit::setLeverage() {
   };
   auto req = getBasePostReq("/v5/position/set-leverage");
 
-  preparePostReq(leverage, req);
+  preparePrivateReq(leverage, req);
   http::write(stream, req);
   http::read(stream, buffer, res);
 
@@ -152,13 +226,24 @@ void ByBit::setLeverage() {
     std::cerr << req << "\n" << answer << "\n";
 
   res.body().clear();
+}
 
+void ByBit::setHedgingMode(bool on) {
+  json hedgingMode = {{"setHedgingMode", on ? "ON" : "OFF"}};
+  auto req = getBasePostReq("/v5/account/set-hedging-mode");
+  preparePrivateReq(hedgingMode, req);
+  http::write(stream, req);
+  http::read(stream, buffer, res);
+  res.body().clear();
 }
 
 //returns a pair of bidPrice and askPrice
 std::pair<double, double> ByBit::getTickerPrice() {
   http::write(stream, priceRequest);
-  http::read(stream, buffer, res);
+  try { http::read(stream, buffer, res); }
+  catch (std::exception &e) {
+    buffer_clear();
+  }
   auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
   res.body().clear();
   return {stod(static_cast<std::string>(response["result"]["list"][0]["bid1Price"])),
@@ -176,19 +261,34 @@ void ByBit::getInstrumentInfo() {
   int8_t quantityScale = 0;
   bool flag = false;
   std::string qtyStep = response["result"]["list"][0]["lotSizeFilter"]["qtyStep"];
-  // digits after . in qty
+  // digits after dot in qty
   for (char c: qtyStep) {
     quantityScale += flag;
     if (c == '.') flag = true;
   }
-  // формат цены и количества (цифры после запятой), шаг цены
+  // Price and quantity format (digits after dot), minimum price step
   priceFmt = std::format("%1.{0}f", static_cast<std::string>(response["result"]["list"][0]["priceScale"]));
   qtyFmt = std::format("%1.{0}f", quantityScale);
   delta = stod(static_cast<std::string>(response["result"]["list"][0]["priceFilter"]["tickSize"]));
 }
 
-void ByBit::debug() {
-  //std::cerr << amendRequest << "\n";
+std::string ByBit::getUSDTBalance() {
+  auto req = getBaseGetReq("/v5/account/wallet-balance?accountType=UNIFIED&coin=USDT");
+  req.set("X-BAPI-API-KEY", bot.api_key);
+  req.set("X-BAPI-SIGN-TYPE", "2");
+  req.set("X-BAPI-RECV-WINDOW", bot.recvWindow);
+  preparePrivateReq({}, req);
+  debug(req);
+  http::write(stream, req);
+  http::read(stream, buffer, res);
+
+  auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
+  res.body().clear();
+  return static_cast<std::string>(response["result"]["list"][0]["coin"][0]["usdValue"]);
+}
+
+void ByBit::debug(const http::request<http::string_body> &req) {
+  std::cerr << req << "\n";
 
   try {
     auto response = json::parse(beast::buffers_to_string(changeRes.body().cdata()));
@@ -204,6 +304,10 @@ std::string ByBit::getTickerName() const noexcept { return bot.ticker; }
 
 inline std::string ByBit::priceToStr(double price) noexcept {
   return (boost::format(priceFmt) % price).str();
+}
+
+inline std::string ByBit::qtyToStr(double qty) noexcept {
+  return (boost::format(qtyFmt) % qty).str();
 }
 
 void ByBit::authenticate() {
@@ -268,6 +372,8 @@ void ByBit::init_public_webSocket() {
   req.set("X-BAPI-SIGN-TYPE", "2");
   req.set("X-BAPI-RECV-WINDOW", bot.recvWindow);
   req.set(http::field::content_type, "application/json");
+  req.keep_alive(true);
+  req.set(boost::beast::http::field::connection, "keep-alive");
   return req;
 }
 
@@ -277,29 +383,58 @@ void ByBit::init_public_webSocket() {
   req.set(http::field::host, bot.host);
   req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
   req.set(http::field::content_type, "application/json");
+  req.keep_alive(true);
+  req.set(boost::beast::http::field::connection, "keep-alive");
   return req;
 }
 
-inline void ByBit::preparePostReq(const json &data, http::request<http::string_body> &req) const {
+inline void ByBit::preparePrivateReq(const json &data, http::request<http::string_body> &req) const {
   std::string Timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>
                                            (std::chrono::system_clock::now().time_since_epoch()).count());
   req.set("X-BAPI-TIMESTAMP", Timestamp);
   req.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(data, bot, Timestamp));
-  req.body() = data.dump();
+  if (!data.empty()) req.body() = data.dump();
   req.prepare_payload();
 }
 
-//void ByBit::timerExpired(const boost::system::error_code &ec) {
-//  if (ec) {
-//    std::cerr << ec << "\n";
-//    return;
-//  }
-//
-//  std::cerr << "Ping sent\n";
-//  wsPrivate.ping(R"("op":"ping")");
-//  m_timer.expires_after(net::chrono::seconds(20));
-//  m_timer.async_wait([this](const boost::system::error_code &ec) { timerExpired(ec); });
-//}
+void ByBit::beginAsyncPings(const boost::system::error_code &ec) {
+  if (ec) {
+    std::cerr << "(timer) " << ec.message() << "\n";
+    return;
+  }
+  wsPrivate.async_ping(R"({"op":"ping"})",
+                       [this](const beast::error_code &ec) {
+                         if (ec) {
+                           std::cerr << "(ping) " << ec.message();
+                           return;
+                         }
+                         //std::cerr << "Pinged [" << currTimeMS << "]\n";
+                         this->m_timer.expires_after(net::chrono::seconds(20));
+                         this->m_timer
+                           .async_wait([this](const boost::system::error_code &ec) { this->beginAsyncPings(ec); }
+                           );
+                       }
+  );
+}
+
+void ByBit::chasePrice(const boost::system::error_code &ec) {
+  if (ec) {
+    std::cerr << "(chasePrice) " << ec.message() << "\n";
+    return;
+  }
+  // Change current price
+  if (longNotFilled && shortNotFilled)
+    changeBoth(getTickerPrice());
+  else if (longNotFilled)
+    changeLong(getTickerPrice().first);
+  else if (shortNotFilled)
+    changeShort(getTickerPrice().second);
+
+  chaseTimer.expires_after(net::chrono::milliseconds(bot.updatePriceInterval));
+  chaseTimer.async_wait(
+    [this](const boost::system::error_code &ec) { this->chasePrice(ec); }
+  );
+}
 
 void ByBit::initOrderReq() {
   orderRequest = getBasePostReq("/v5/order/create-batch");
@@ -315,6 +450,5 @@ void ByBit::initCancelReq() {
 }
 
 void ByBit::initAmendRequest() {
-  amendParams["symbol"] = bot.ticker;
-  amendRequest = getBasePostReq("/v5/order/amend");
+  amendRequest = getBasePostReq("/v5/order/amend-batch");
 }

@@ -10,6 +10,7 @@ struct BotBase {
   BotBase &operator=(BotBase &&) = default;
 
   std::string api_key, secret_key, ticker, host, webSocketPrivate,
-  webSocketPublic, recvWindow, port, quantity, leverage;
-  double takeProfit, stopLoss;
+  webSocketPublic, recvWindow, port, leverage;
+  double quantity, takeProfit, stopLoss;
+  int32_t updatePriceInterval;
 };

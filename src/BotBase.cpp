@@ -21,6 +21,7 @@ BotBase::BotBase(const std::string &fileName) {
     quantity = parameters["quantityBaseCoin"];
     takeProfit = parameters["takeProfit"];
     stopLoss = parameters["stopLoss"];
+    updatePriceInterval = parameters["updatePriceInterval"];
     file.close();
   }
   catch (std::exception &e) {
