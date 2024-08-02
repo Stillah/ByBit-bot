@@ -11,8 +11,10 @@
 #include <boost/asio/strand.hpp>
 #include <boost/asio/high_resolution_timer.hpp>
 #include <nlohmann/json.hpp>
+#include <fstream>
 #include "BotBase.h"
 #define currTimeMS duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
+
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
@@ -27,9 +29,9 @@ using json = nlohmann::json;
 //TODO: add noexcept and const
 class ByBit {
   public:
-  bool shortNotFilled = true, longNotFilled = true;
+  //bool shortNotFilled = true, longNotFilled = true;
 
-  ByBit(const std::string &, std::string &, std::string &);
+  ByBit(const std::string &, std::ofstream &, std::string &, std::string &);
   ByBit() = delete;
   ByBit(const ByBit &) = delete;
   ByBit &operator=(const ByBit &) = delete;
@@ -49,22 +51,24 @@ class ByBit {
   void setCallback(const std::function<void(beast::error_code, size_t)> &);
 
   void cancelOrders();
-  void placeBoth(std::pair<double, double>);
-  void placeLong(double);
-  void placeShort(double);
-  void changeBoth(std::pair<double, double>);
-  void changeLong(double);
-  void changeShort(double);
+  void placeBoth(std::pair<long double, long double>);
+  void placeLong(long double);
+  void placeShort(long double);
+  void changeBoth(std::pair<long double, long double>);
+  void changeLong(long double);
+  void changeShort(long double);
   void setLeverage();
   void setHedgingMode(bool on);
-  std::pair<double, double> getTickerPrice();
+  std::pair<long double, long double> getTickerPrice();
   void getInstrumentInfo();
   std::string getUSDTBalance();
+  std::pair<bool, bool> ordersAreActive();
 
-  void debug(const http::request<http::string_body> &);
+  void debug(const http::request<http::string_body> &, const http::response<http::dynamic_body> &);
   void buffer_clear() noexcept;
-  inline std::string priceToStr(double price) noexcept;
-  inline std::string qtyToStr(double qty) noexcept;
+  void consume_buffer(size_t) noexcept;
+  inline std::string priceToStr(long double) noexcept;
+  inline std::string qtyToStr(long double) noexcept;
   std::string getTickerName() const noexcept;
 
   private:
@@ -73,8 +77,8 @@ class ByBit {
   void init_http();
   void init_private_webSocket();
   void init_public_webSocket();
-  [[nodiscard]] http::request<http::string_body> getBasePostReq(const std::string &) const;
-  [[nodiscard]] http::request<http::string_body> getBaseGetReq(const std::string &) const;
+  http::request<http::string_body> getBasePrivateReq(const std::string &, http::verb) const;
+  http::request<http::string_body> getBasePublicReq(const std::string &, http::verb) const;
   inline void preparePrivateReq(const json &, http::request<http::string_body> &) const;
   void beginAsyncPings(const boost::system::error_code &ec);
   void chasePrice(const boost::system::error_code &ec);
@@ -84,9 +88,10 @@ class ByBit {
   void initAmendRequest();
 
   BotBase bot;
-  double delta, takeProfit, stopLoss;
+  long double delta, takeProfit, stopLoss;
   std::string priceFmt, qtyFmt;
   std::string &longLinkId, &shortLinkId;
+  std::ofstream &output;
   std::function<void(beast::error_code, size_t)> callback;
 
   net::io_context ioc, ioc_webSocket;
@@ -95,8 +100,8 @@ class ByBit {
   ssl::context ctx{ssl::context::tlsv12_client}, ctx_webSocket{ssl::context::tlsv12_client};
   tcp::resolver resolver{ioc}, resolver_webSocket{ioc_webSocket};
   Stream stream{ioc, ctx};
-  beast::flat_buffer buffer, wsBuffer;
-  http::response<http::dynamic_body> cancelRes, orderRes, changeRes, res;
+  beast::flat_buffer buffer, wsBuffer, priceBuffer;
+  http::response<http::dynamic_body> cancelRes, orderRes, changeRes, priceRes, res;
   http::request<http::string_body> orderRequest, priceRequest, cancelRequest, amendRequest;
   websocket::stream<beast::ssl_stream<tcp::socket>> wsPublic{ioc_webSocket, ctx_webSocket},
     wsPrivate{ioc_webSocket, ctx_webSocket};

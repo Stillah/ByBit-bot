@@ -2,7 +2,7 @@
 #include <string>
 
 struct BotBase {
-  BotBase(const std::string&);
+  explicit BotBase(const std::string&);
   BotBase() = default;
   BotBase(const BotBase &) = default;
   BotBase &operator=(const BotBase &) = default;

@@ -18,7 +18,7 @@ BotBase::BotBase(const std::string &fileName) {
     recvWindow = parameters["recvWindow"];
     leverage = parameters["leverage"];
     port = parameters["port"];
-    quantity = parameters["quantityBaseCoin"];
+    quantity = parameters["approxQuantityUSD"];
     takeProfit = parameters["takeProfit"];
     stopLoss = parameters["stopLoss"];
     updatePriceInterval = parameters["updatePriceInterval"];

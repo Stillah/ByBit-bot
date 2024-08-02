@@ -17,124 +17,140 @@ inline void updateOrderLinkId(std::string &linkOrderId, int8_t offset) noexcept 
   linkOrderId += std::to_string(currTimeMS);
 }
 
-bool checkWsSubscription(ByBit &exchange) {
+
+
+bool checkWsSubscription(ByBit &exchange, std::ofstream &output) {
   bool opened = false, subscribed = false;
+
   exchange.read_private_Socket();
-  opened = static_cast<bool>(json::parse(exchange.get_socket_data())["success"]);
+  json openMessage = json::parse(exchange.get_socket_data());
+  opened = static_cast<bool>(openMessage["success"]);
   exchange.buffer_clear();
 
   exchange.read_private_Socket();
-  subscribed = static_cast<bool>(json::parse(exchange.get_socket_data())["success"]);
+  json subscribeMessage = json::parse(exchange.get_socket_data());
+  subscribed = static_cast<bool>(subscribeMessage["success"]);
   exchange.buffer_clear();
+
+  if (!opened)
+    output << "Couldn't open websocket\n" << openMessage.dump(2) << std::endl;
+  if (!subscribed)
+    output << "Couldn't subscribe to websocket\n" << subscribeMessage.dump(2) << std::endl;
+
   return (opened && subscribed);
 }
 
-void Strategy(const std::string &file) {
-  int32_t takeProfits = 0, stopLoses = 0, totalRequests = 0;
-  std::ofstream output("output.txt");
-  std::ifstream input(file, std::ios::in);
-  std::string ticker;
+std::string currDateAndTime() noexcept {
+  std::time_t t = std::time(nullptr);
+  char buffer[64];
+  strftime(buffer, sizeof(buffer), "%Y-%h-%d %H_%M_%S", std::localtime(&t));
+  return buffer;
+}
+
+void Strategy(const std::string &config, const std::string &log, int32_t &takeProfits, int32_t &stopLoses,
+              long double &fees, long double &generatedVolume) {
+  int8_t offset;
+  std::ifstream input(config, std::ios::in);
+  std::ofstream output(log, std::ios::app);
+  std::string longOrderId, shortOrderId;
+
   try {
-    if (!file.contains(".json")) throw std::invalid_argument("File needs to be .json");
+    if (!config.contains(".json")) throw std::invalid_argument("File needs to be .json");
     json parameters = json::parse(input);
-    ticker = parameters["ticker"];
+    longOrderId = "l-" + static_cast<std::string>(parameters["ticker"]);
+    shortOrderId = "s-" + static_cast<std::string>(parameters["ticker"]);
+    offset = longOrderId.size();
     input.close();
   }
   catch (std::exception &e) {
-    std::cerr << e.what() << std::endl;
+    output << e.what() << std::endl;
+    output << "[" << currDateAndTime() << "]" << std::endl;
     assert(false);
   }
-  std::string longOrderId = "l-" + ticker;
-  std::string shortOrderId = "s-" + ticker;
-  int8_t offset = longOrderId.size();
-  ByBit bybit(file, longOrderId, shortOrderId);
 
-  auto callback = [&](beast::error_code ec, size_t) {
+  ByBit bybit(config, output, longOrderId, shortOrderId);
+
+  auto callback = [&](beast::error_code ec, size_t messageSize) {
     if (ec) {
-      std::cerr << "(callback) " << ec.message() << "\n";
-      return;
+      output << "(callback) " << ec.message() << std::endl;
+      throw std::exception();
     }
 
     auto response = json::parse(bybit.get_socket_data());
-    //std::output << response.dump(2) << "\n";
 
     if (response["data"][0]["stopOrderType"] == "TakeProfit") {
       if (response["data"][0]["side"] == "Sell") {
-        std::cerr << "Long takeprofit triggered. TP/SL: " << ++takeProfits << "/" << stopLoses << "\n";
+        output << "Long";
         updateOrderLinkId(longOrderId, offset);
         auto BidAsk = bybit.getTickerPrice();
         bybit.placeLong(BidAsk.first);
-        ++totalRequests;
-        bybit.longNotFilled = true;
       }
-      else if (response["data"][0]["side"] == "Buy") {
-        std::cerr << "Short takeprofit triggered. TP/SL: " << ++takeProfits << "/" << stopLoses << "\n";
+      else {
+        output << "Short";
         updateOrderLinkId(shortOrderId, offset);
         auto BidAsk = bybit.getTickerPrice();
         bybit.placeShort(BidAsk.second);
-        ++totalRequests;
-        bybit.shortNotFilled = true;
       }
+      generatedVolume += stod(response["data"][0]["execValue"].get<std::string>());
+      fees += stod(response["data"][0]["execFee"].get<std::string>());
+      output << " takeprofit triggered | TP/SL: " << ++takeProfits << "/" << stopLoses << " | Total Fees: "
+                << fees << " | Generated volume: " << generatedVolume << std::endl;
     }
     else if (response["data"][0]["stopOrderType"] == "StopLoss") {
       if (response["data"][0]["side"] == "Sell") {
-        std::cerr << "Long stoploss triggered. TP/SL: " << takeProfits << "/" << ++stopLoses << "\n";
+        output << "Long";
         updateOrderLinkId(longOrderId, offset);
         auto BidAsk = bybit.getTickerPrice();
         bybit.placeLong(BidAsk.first);
-        ++totalRequests;
-        bybit.longNotFilled = true;
       }
-      else if (response["data"][0]["side"] == "Buy") {
-        std::cerr << "Short stoploss triggered. TP/SL: " << takeProfits << "/" << ++stopLoses << "\n";
+      else {
+        output << "Short";
         updateOrderLinkId(shortOrderId, offset);
         auto BidAsk = bybit.getTickerPrice();
         bybit.placeShort(BidAsk.second);
-        ++totalRequests;
-        bybit.shortNotFilled = true;
       }
+      generatedVolume += stod(response["data"][0]["execValue"].get<std::string>());
+      fees += stod(response["data"][0]["execFee"].get<std::string>());
+      output << " stoploss triggered | TP/SL: " << takeProfits << "/" << ++stopLoses << " | Total Fees: "
+                << fees << " | Generated volume: " << generatedVolume << std::endl;
     }
-    else if (response["data"][0]["isMaker"] == true) {
-      if (static_cast<std::string>(response["data"][0]["orderLinkId"])[0] == 's')
-        bybit.shortNotFilled = false;
-      else
-        bybit.longNotFilled = false;
-    }
-    bybit.buffer_clear();
+//    else if (response["data"][0]["isMaker"].get<bool>()) {
+//      if (static_cast<std::string>(response["data"][0]["orderLinkId"])[0] == 's')
+//        bybit.shortNotFilled = false;
+//      else
+//        bybit.longNotFilled = false;
+//    }
+    bybit.consume_buffer(messageSize);
     bybit.async_read_private_Socket();
   };
 
   //Subscribe to websocket stream
   json subscription_message{{"op", "subscribe"}, {"args", {"execution"}}};
   bybit.write_private_Socket(subscription_message.dump());
-  if (!checkWsSubscription(bybit)) {
-    std::cerr << "Couldn't open websocket or subscribe to it.\n";
-    return;
-  }
-  //output << "Current USDT balance: " << bybit.getUSDTBalance() << "\n";
-  bybit.setHedgingMode(true);
+  if (!checkWsSubscription(bybit, output))
+    assert(false);
+
   updateOrderLinkId(longOrderId, offset);
   updateOrderLinkId(shortOrderId, offset);
-  bybit.placeBoth(bybit.getTickerPrice());
-
+  output << "Starting USDT balance: " << bybit.getUSDTBalance() << std::endl;
+  bybit.setHedgingMode(true);
   bybit.setCallback(callback);
+  bybit.cancelOrders();
+
+  auto activeOrders = bybit.ordersAreActive();
+  if (!activeOrders.first && !activeOrders.second)
+    bybit.placeBoth(bybit.getTickerPrice());
+  else if (!activeOrders.first)
+    bybit.placeLong(bybit.getTickerPrice().first);
+  else if (!activeOrders.second)
+    bybit.placeShort(bybit.getTickerPrice().second);
+
   bybit.async_read_private_Socket();
 
-  strategyBegin:
-  try {
-    bybit.ws_ioc_run();
-  }
-  // No idea what to actually do
+  try { bybit.ws_ioc_run(); }
   catch (std::exception &e) {
-    std::cerr << "Hopefully everything's fine\n";
-    std::cerr << e.what() << "\n";
-    bybit.cancelOrders();
-    updateOrderLinkId(longOrderId, offset);
-    updateOrderLinkId(shortOrderId, offset);
-    bybit.placeBoth(bybit.getTickerPrice());
-    goto strategyBegin;
+    output << "Something went wrong: " << e.what() << std::endl;
+    output << "[" << currDateAndTime() << "]" << std::endl;
+    output.close();
   }
-
-  std::cerr << "Total executed orders: " << totalRequests << "\n";
-  output.close();
 }

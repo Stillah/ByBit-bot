@@ -3,12 +3,13 @@
 #include <boost/format.hpp>
 
 
-ByBit::ByBit(const std::string &file, std::string &longLinkIdRef, std::string &shortLinkIdRef)
+ByBit::ByBit(const std::string &file, std::ofstream &out, std::string &longLinkIdRef, std::string &shortLinkIdRef)
   : longLinkId(longLinkIdRef),
     shortLinkId(shortLinkIdRef),
+    output(out),
     m_timer(ioc_webSocket),
     chaseTimer(ioc_webSocket) {
-  std::cerr << "Bot started construction\n";
+  output << "Bot started construction" << std::endl;
   bot = BotBase(file);
   init_http();
   initOrderReq();
@@ -22,17 +23,17 @@ ByBit::ByBit(const std::string &file, std::string &longLinkIdRef, std::string &s
 
   cancelParams["request"][0]["symbol"] = cancelParams["request"][1]["symbol"] = bot.ticker;
   longPosParams["symbol"] = shortPosParams["symbol"] = bot.ticker;
-  longPosParams["qty"] = shortPosParams["qty"] = qtyToStr(bot.quantity / 2);
+  longPosParams["qty"] = shortPosParams["qty"] = qtyToStr(bot.quantity / (2 * getTickerPrice().first));
   takeProfit = bot.takeProfit / 100;
   stopLoss = bot.stopLoss / 100;
-  std::cerr << "Bot finished construction\n";
+  output << "Bot finished construction" << std::endl;
 }
 
 ByBit::~ByBit() {
-  std::cerr << "Cancelling orders...\n";
-  cancelOrders();
   webSocket_close();
-  std::cerr << "Orders cancelled\n";
+//  wsPrivate.next_layer().shutdown();
+//  wsPrivate.next_layer().next_layer().shutdown(net::socket_base::shutdown_type::shutdown_both);
+//  stream.shutdown();
 }
 
 void ByBit::async_read_private_Socket() {
@@ -58,8 +59,8 @@ void ByBit::write_private_Socket(const std::string &text) { wsPrivate.write(net:
 void ByBit::write_public_Socket(const std::string &text) { wsPublic.write(net::buffer(text)); }
 
 void ByBit::webSocket_close() {
-  if (wsPrivate.is_open()) wsPrivate.close(websocket::close_code::none);
-  if (wsPublic.is_open()) wsPublic.close(websocket::close_code::none);
+  if (wsPrivate.is_open()) wsPrivate.close(websocket::close_code::normal);
+  if (wsPublic.is_open()) wsPublic.close(websocket::close_code::normal);
 }
 
 std::string ByBit::get_socket_data() const noexcept { return beast::buffers_to_string(wsBuffer.data()); }
@@ -69,15 +70,20 @@ void ByBit::setCallback(const std::function<void(beast::error_code, size_t)> &ne
 }
 
 void ByBit::cancelOrders() {
+  output << "Cancelling orders..." << std::endl;
   preparePrivateReq(cancelParams, cancelRequest);
   http::write(stream, cancelRequest);
-  http::read(stream, buffer, cancelRes);
-  std::cerr << beast::buffers_to_string(cancelRes.body().data());
-  cancelRes.body().clear();
+  try {
+    http::read(stream, buffer, cancelRes);
+    //output << beast::buffers_to_string(cancelRes.body().data()) << std::endl;
+    cancelRes.body().clear();
+    output << "Orders cancelled (if there were any)" << std::endl;
+  }
+  catch (...) { output << "Couldn't read inside cancelOrders()" << std::endl; }
 }
 
 //Maybe remove assert and ifs to lower latency
-void ByBit::placeBoth(std::pair<double, double> price) {
+void ByBit::placeBoth(std::pair<long double, long double> price) {
   auto [bidPrice, askPrice] = price;
 
   // setting up long parameters
@@ -100,10 +106,10 @@ void ByBit::placeBoth(std::pair<double, double> price) {
   orderRes.body().clear();
 
   orderParams["request"].clear();
-  std::cerr << "Both orders placed\n";
+  output << "Both orders placed" << std::endl;
 }
 
-void ByBit::placeLong(double bidPrice) {
+void ByBit::placeLong(long double bidPrice) {
   orderParams["request"][0] = longPosParams;
   orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
   orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
@@ -114,15 +120,15 @@ void ByBit::placeLong(double bidPrice) {
   http::write(stream, orderRequest);
   try { http::read(stream, buffer, orderRes); }
   catch (std::exception &e) {
-    std::cerr << "placeLong exception\n";
+    output << "placeLong exception" << std::endl;
   }
   orderRes.body().clear();
 
   orderParams["request"].clear();
-  std::cerr << "Long order placed\n";
+  //output << "Long order placed" << std::endl;
 }
 
-void ByBit::placeShort(double askPrice) {
+void ByBit::placeShort(long double askPrice) {
   orderParams["request"][0] = shortPosParams;
   orderParams["request"][0]["price"] = priceToStr(askPrice + delta);
   orderParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
@@ -133,15 +139,15 @@ void ByBit::placeShort(double askPrice) {
   http::write(stream, orderRequest);
   try { http::read(stream, buffer, orderRes); }
   catch (std::exception &e) {
-    std::cerr << "placeShort exception\n";
+    output << "placeShort exception" << std::endl;
   }
   orderRes.body().clear();
 
   orderParams["request"].clear();
-  std::cerr << "Short order placed\n";
+  //output << "Short order placed" << std::endl;
 }
 
-void ByBit::changeBoth(std::pair<double, double> price) {
+void ByBit::changeBoth(std::pair<long double, long double> price) {
   auto [bidPrice, askPrice] = price;
 
   // setting up long changes
@@ -153,7 +159,7 @@ void ByBit::changeBoth(std::pair<double, double> price) {
 
   // setting up short changes
   amendParams["request"][1]["symbol"] = bot.ticker;
-  amendParams["request"][1]["price"] = priceToStr(askPrice);
+  amendParams["request"][1]["price"] = priceToStr(askPrice + delta);
   amendParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
   amendParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
   amendParams["request"][1]["orderLinkId"] = shortLinkId;
@@ -162,15 +168,15 @@ void ByBit::changeBoth(std::pair<double, double> price) {
   http::write(stream, amendRequest);
   try { http::read(stream, buffer, changeRes); }
   catch (std::exception &e) {
-    std::cerr << "changeBoth exception\n";
+    output << "changeBoth exception" << std::endl;
   }
 
   changeRes.body().clear();
   amendParams["request"].clear();
-  //std::cerr << "Changed both orders\n";
+  //output << "Changed both orders" << std::endl;
 }
 
-void ByBit::changeLong(double bidPrice) {
+void ByBit::changeLong(long double bidPrice) {
   amendParams["request"][0]["symbol"] = bot.ticker;
   amendParams["request"][0]["price"] = priceToStr(bidPrice - delta);
   amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
@@ -181,18 +187,18 @@ void ByBit::changeLong(double bidPrice) {
   http::write(stream, amendRequest);
   try { http::read(stream, buffer, changeRes); }
   catch (std::exception &e) {
-    std::cerr << "changeLong exception\n";
+    output << "changeLong exception" << std::endl;
   }
 
   changeRes.body().clear();
   amendParams["request"].clear();
-  //std::cerr << "Changed long order\n";
+  //output << "Changed long order" << std::endl;
 }
 
-void ByBit::changeShort(double askPrice) {
+void ByBit::changeShort(long double askPrice) {
   amendParams["request"][0]["symbol"] = bot.ticker;
-  amendParams["request"][0]["price"] = priceToStr(askPrice);
-  amendParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
+  amendParams["request"][0]["price"] = priceToStr(askPrice + delta);
+  amendParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - delta);
   amendParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
   amendParams["request"][0]["orderLinkId"] = shortLinkId;
 
@@ -200,22 +206,22 @@ void ByBit::changeShort(double askPrice) {
   http::write(stream, amendRequest);
   try { http::read(stream, buffer, changeRes); }
   catch (std::exception &e) {
-    std::cerr << "changeShort exception\n";
+    output << "changeShort exception" << std::endl;
   }
 
   changeRes.body().clear();
   amendParams["request"].clear();
-  //std::cerr << "Changed short order\n";
+  //output << "Changed short order" << std::endl;
 }
 
 void ByBit::setLeverage() {
-  json leverage = {
+  const json leverage = {
     {"category", "linear"},
     {"symbol", bot.ticker},
     {"buyLeverage", bot.leverage},
     {"sellLeverage", bot.leverage}
   };
-  auto req = getBasePostReq("/v5/position/set-leverage");
+  auto req = getBasePrivateReq("/v5/position/set-leverage", http::verb::post);
 
   preparePrivateReq(leverage, req);
   http::write(stream, req);
@@ -223,14 +229,14 @@ void ByBit::setLeverage() {
 
   json answer = json::parse(beast::buffers_to_string(res.body().data()));
   if (answer["retCode"] != 0 && answer["retMsg"] != "leverage not modified")
-    std::cerr << req << "\n" << answer << "\n";
+    output << req << std::endl << answer << std::endl;
 
   res.body().clear();
 }
 
 void ByBit::setHedgingMode(bool on) {
   json hedgingMode = {{"setHedgingMode", on ? "ON" : "OFF"}};
-  auto req = getBasePostReq("/v5/account/set-hedging-mode");
+  auto req = getBasePrivateReq("/v5/account/set-hedging-mode", http::verb::post);
   preparePrivateReq(hedgingMode, req);
   http::write(stream, req);
   http::read(stream, buffer, res);
@@ -238,20 +244,20 @@ void ByBit::setHedgingMode(bool on) {
 }
 
 //returns a pair of bidPrice and askPrice
-std::pair<double, double> ByBit::getTickerPrice() {
+std::pair<long double, long double> ByBit::getTickerPrice() {
   http::write(stream, priceRequest);
-  try { http::read(stream, buffer, res); }
+  try { http::read(stream, priceBuffer, priceRes); }
   catch (std::exception &e) {
-    buffer_clear();
+    priceBuffer.clear();
   }
-  auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
-  res.body().clear();
+  auto response = json::parse(beast::buffers_to_string(priceRes.body().cdata()));
+  priceRes.body().clear();
   return {stod(static_cast<std::string>(response["result"]["list"][0]["bid1Price"])),
           stod(static_cast<std::string>(response["result"]["list"][0]["ask1Price"]))};
 }
 
 void ByBit::getInstrumentInfo() {
-  auto req = getBaseGetReq("/v5/market/instruments-info?category=linear&symbol=" + bot.ticker);
+  auto req = getBasePublicReq("/v5/market/instruments-info?category=linear&symbol=" + bot.ticker, http::verb::get);
   http::write(stream, req);
   http::read(stream, buffer, res);
 
@@ -273,40 +279,61 @@ void ByBit::getInstrumentInfo() {
 }
 
 std::string ByBit::getUSDTBalance() {
-  auto req = getBaseGetReq("/v5/account/wallet-balance?accountType=UNIFIED&coin=USDT");
-  req.set("X-BAPI-API-KEY", bot.api_key);
-  req.set("X-BAPI-SIGN-TYPE", "2");
-  req.set("X-BAPI-RECV-WINDOW", bot.recvWindow);
-  preparePrivateReq({}, req);
-  debug(req);
+  auto req = getBasePrivateReq("/v5/account/wallet-balance?accountType=UNIFIED&coin=USDT", http::verb::get);
+  const json parameters = {{"accountType", "UNIFIED"}, {"coin", "USDT"}};
+  preparePrivateReq(parameters, req);
+
   http::write(stream, req);
   http::read(stream, buffer, res);
 
   auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
   res.body().clear();
-  return static_cast<std::string>(response["result"]["list"][0]["coin"][0]["usdValue"]);
+  return static_cast<std::string>(response["result"]["list"][0]["coin"][0]["walletBalance"]);
 }
 
-void ByBit::debug(const http::request<http::string_body> &req) {
-  std::cerr << req << "\n";
+// <long, short>, true if order is filled
+std::pair<bool, bool> ByBit::ordersAreActive() {
+  auto req = getBasePrivateReq("/v5/order/realtime?category=linear&symbol=" + bot.ticker, http::verb::get);
+  const json parameters = {{"category", "linear"}, {"symbol", bot.ticker}};
+  preparePrivateReq(parameters, req);
+
+  http::write(stream, req);
+  http::read(stream, buffer, res);
+
+  auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
+  res.body().clear();
+
+  std::pair<bool, bool> activeOrders{false, false};
+  for (const auto &[index, object]: response["result"]["list"].items()) {
+    if (object["side"] == "Buy" && object["symbol"] == bot.ticker)
+      activeOrders.second = true;
+    else if (object["side"] == "Sell" && object["symbol"] == bot.ticker)
+      activeOrders.first = true;
+  }
+  return activeOrders;
+}
+
+void ByBit::debug(const http::request<http::string_body> &req, const http::response<http::dynamic_body> &res) {
+  output << req << std::endl;
 
   try {
-    auto response = json::parse(beast::buffers_to_string(changeRes.body().cdata()));
-    std::cerr << response.dump(2) << std::endl;
+    auto response = json::parse(beast::buffers_to_string(res.body().cdata()));
+    output << response.dump(2) << std::endl;
   }
-  catch (...) { std::cerr << beast::buffers_to_string(changeRes.body().cdata()) << "\n"; }
-  changeRes.body().clear();
+  catch (...) { output << beast::buffers_to_string(res.body().cdata()) << std::endl; }
 }
 
 void ByBit::buffer_clear() noexcept { wsBuffer.clear(); }
 
+void ByBit::consume_buffer(size_t messageSize) noexcept { wsBuffer.consume(messageSize); }
+
 std::string ByBit::getTickerName() const noexcept { return bot.ticker; }
 
-inline std::string ByBit::priceToStr(double price) noexcept {
+inline std::string ByBit::priceToStr(long double price) noexcept {
   return (boost::format(priceFmt) % price).str();
 }
 
-inline std::string ByBit::qtyToStr(double qty) noexcept {
+inline std::string ByBit::qtyToStr(long double qty) noexcept {
   return (boost::format(qtyFmt) % qty).str();
 }
 
@@ -346,7 +373,7 @@ void ByBit::init_private_webSocket() {
   auto const results = resolver_webSocket.resolve(bot.webSocketPrivate, bot.port);
   net::connect(wsPrivate.next_layer().next_layer(), results.begin(), results.end());
   wsPrivate.next_layer().handshake(ssl::stream_base::client);
-  wsPrivate.handshake(bot.webSocketPrivate, "/v5/private");
+  wsPrivate.handshake(bot.webSocketPrivate, "/v5/private?max_active_time=10m");
   authenticate();
 }
 
@@ -363,8 +390,8 @@ void ByBit::init_public_webSocket() {
   wsPublic.handshake(bot.webSocketPublic, "/v5/public/spot");
 }
 
-[[nodiscard]] http::request<http::string_body> ByBit::getBasePostReq(const std::string &endpoint) const {
-  http::request<http::string_body> req{http::verb::post, endpoint, 11};
+http::request<http::string_body> ByBit::getBasePrivateReq(const std::string &endpoint, http::verb httpVerb) const {
+  http::request<http::string_body> req{httpVerb, endpoint, 11};
 
   req.set(http::field::host, bot.host);
   req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
@@ -377,8 +404,8 @@ void ByBit::init_public_webSocket() {
   return req;
 }
 
-[[nodiscard]] http::request<http::string_body> ByBit::getBaseGetReq(const std::string &endpoint) const {
-  http::request<http::string_body> req{http::verb::get, endpoint, 11};
+http::request<http::string_body> ByBit::getBasePublicReq(const std::string &endpoint, http::verb httpVerb) const {
+  http::request<http::string_body> req{httpVerb, endpoint, 11};
 
   req.set(http::field::host, bot.host);
   req.set(http::field::user_agent, BOOST_BEAST_VERSION_STRING);
@@ -392,24 +419,29 @@ inline void ByBit::preparePrivateReq(const json &data, http::request<http::strin
   std::string Timestamp = std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>
                                            (std::chrono::system_clock::now().time_since_epoch()).count());
   req.set("X-BAPI-TIMESTAMP", Timestamp);
-  req.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(data, bot, Timestamp));
-  if (!data.empty()) req.body() = data.dump();
+  if (req.method() == http::verb::post) {
+    req.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(data, bot, Timestamp));
+    req.body() = data.dump();
+  }
+  else
+    req.set("X-BAPI-SIGN", Encryption::GenerateGetSignature(data, bot, Timestamp));
+
   req.prepare_payload();
 }
 
 void ByBit::beginAsyncPings(const boost::system::error_code &ec) {
   if (ec) {
-    std::cerr << "(timer) " << ec.message() << "\n";
-    return;
+    output << "(timer) " << ec.message() << std::endl;
+    throw std::exception();
   }
   wsPrivate.async_ping(R"({"op":"ping"})",
                        [this](const beast::error_code &ec) {
                          if (ec) {
-                           std::cerr << "(ping) " << ec.message();
-                           return;
+                           output << "(ping) " << ec.message();
+                           throw std::exception();
                          }
-                         //std::cerr << "Pinged [" << currTimeMS << "]\n";
-                         this->m_timer.expires_after(net::chrono::seconds(20));
+                         //output << "Pinged [" << currTimeMS << "]" << std::endl;
+                         this->m_timer.expires_after(net::chrono::seconds(10));
                          this->m_timer
                            .async_wait([this](const boost::system::error_code &ec) { this->beginAsyncPings(ec); }
                            );
@@ -419,16 +451,16 @@ void ByBit::beginAsyncPings(const boost::system::error_code &ec) {
 
 void ByBit::chasePrice(const boost::system::error_code &ec) {
   if (ec) {
-    std::cerr << "(chasePrice) " << ec.message() << "\n";
-    return;
+    output << "(chasePrice) " << ec.message() << std::endl;
+    throw std::exception();
   }
   // Change current price
-  if (longNotFilled && shortNotFilled)
-    changeBoth(getTickerPrice());
-  else if (longNotFilled)
-    changeLong(getTickerPrice().first);
-  else if (shortNotFilled)
-    changeShort(getTickerPrice().second);
+  //if (longNotFilled && shortNotFilled)
+  changeBoth(getTickerPrice());
+//  else if (longNotFilled)
+//    changeLong(getTickerPrice().first);
+//  else if (shortNotFilled)
+//    changeShort(getTickerPrice().second);
 
   chaseTimer.expires_after(net::chrono::milliseconds(bot.updatePriceInterval));
   chaseTimer.async_wait(
@@ -437,18 +469,18 @@ void ByBit::chasePrice(const boost::system::error_code &ec) {
 }
 
 void ByBit::initOrderReq() {
-  orderRequest = getBasePostReq("/v5/order/create-batch");
+  orderRequest = getBasePrivateReq("/v5/order/create-batch", http::verb::post);
 }
 
 void ByBit::initPriceReq() {
-  priceRequest = getBaseGetReq("/v5/market/tickers?category=linear&symbol=" + bot.ticker);
+  priceRequest = getBasePublicReq("/v5/market/tickers?category=linear&symbol=" + bot.ticker, http::verb::get);
 }
 
 void ByBit::initCancelReq() {
   cancelParams["symbol"] = bot.ticker;
-  cancelRequest = getBasePostReq("/v5/order/cancel-all");
+  cancelRequest = getBasePrivateReq("/v5/order/cancel-all", http::verb::post);
 }
 
 void ByBit::initAmendRequest() {
-  amendRequest = getBasePostReq("/v5/order/amend-batch");
+  amendRequest = getBasePrivateReq("/v5/order/amend-batch", http::verb::post);
 }

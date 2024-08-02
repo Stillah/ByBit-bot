@@ -34,7 +34,8 @@ add_executable(COMPLICATED
 target_sources(COMPLICATED PRIVATE src/main.cpp)
 
 target_link_libraries(COMPLICATED PRIVATE
-        ZLIB::ZLIB OpenSSL::SSL
+        ZLIB::ZLIB
+        OpenSSL::SSL
         OpenSSL::Crypto
         nlohmann_json::nlohmann_json
         ${Boost_LIBRARIES}
