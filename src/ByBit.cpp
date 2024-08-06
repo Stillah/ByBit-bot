@@ -87,17 +87,19 @@ void ByBit::placeBoth(std::pair<long double, long double> price) {
   auto [bidPrice, askPrice] = price;
 
   // setting up long parameters
+  bidPrice -= delta;
   orderParams["request"][0] = longPosParams;
-  orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  orderParams["request"][0]["price"] = priceToStr(bidPrice);
+  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   orderParams["request"][0]["orderLinkId"] = longLinkId;
 
   // setting up short parameters
+  askPrice += delta;
   orderParams["request"][1] = shortPosParams;
-  orderParams["request"][1]["price"] = priceToStr(askPrice + delta);
-  orderParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
-  orderParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  orderParams["request"][1]["price"] = priceToStr(askPrice);
+  orderParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5*delta);
+  orderParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5*delta);
   orderParams["request"][1]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(orderParams, orderRequest);
@@ -110,10 +112,11 @@ void ByBit::placeBoth(std::pair<long double, long double> price) {
 }
 
 void ByBit::placeLong(long double bidPrice) {
+  bidPrice -= delta;
   orderParams["request"][0] = longPosParams;
-  orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  orderParams["request"][0]["price"] = priceToStr(bidPrice);
+  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   orderParams["request"][0]["orderLinkId"] = longLinkId;
 
   preparePrivateReq(orderParams, orderRequest);
@@ -129,10 +132,11 @@ void ByBit::placeLong(long double bidPrice) {
 }
 
 void ByBit::placeShort(long double askPrice) {
+  askPrice += delta;
   orderParams["request"][0] = shortPosParams;
-  orderParams["request"][0]["price"] = priceToStr(askPrice + delta);
-  orderParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
-  orderParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  orderParams["request"][0]["price"] = priceToStr(askPrice);
+  orderParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5*delta);
+  orderParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5*delta);
   orderParams["request"][0]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(orderParams, orderRequest);
@@ -151,17 +155,19 @@ void ByBit::changeBoth(std::pair<long double, long double> price) {
   auto [bidPrice, askPrice] = price;
 
   // setting up long changes
+  bidPrice -= delta;
   amendParams["request"][0]["symbol"] = bot.ticker;
-  amendParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  amendParams["request"][0]["price"] = priceToStr(bidPrice);
+  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   amendParams["request"][0]["orderLinkId"] = longLinkId;
 
   // setting up short changes
+  askPrice += delta;
   amendParams["request"][1]["symbol"] = bot.ticker;
-  amendParams["request"][1]["price"] = priceToStr(askPrice + delta);
-  amendParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
-  amendParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  amendParams["request"][1]["price"] = priceToStr(askPrice);
+  amendParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5*delta);
+  amendParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5*delta);
   amendParams["request"][1]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(amendParams, amendRequest);
@@ -177,10 +183,11 @@ void ByBit::changeBoth(std::pair<long double, long double> price) {
 }
 
 void ByBit::changeLong(long double bidPrice) {
+  bidPrice -= delta;
   amendParams["request"][0]["symbol"] = bot.ticker;
-  amendParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  amendParams["request"][0]["price"] = priceToStr(bidPrice);
+  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   amendParams["request"][0]["orderLinkId"] = longLinkId;
 
   preparePrivateReq(amendParams, amendRequest);
@@ -196,10 +203,11 @@ void ByBit::changeLong(long double bidPrice) {
 }
 
 void ByBit::changeShort(long double askPrice) {
+  askPrice += delta;
   amendParams["request"][0]["symbol"] = bot.ticker;
-  amendParams["request"][0]["price"] = priceToStr(askPrice + delta);
-  amendParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - delta);
-  amendParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  amendParams["request"][0]["price"] = priceToStr(askPrice);
+  amendParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5*delta);
+  amendParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5*delta);
   amendParams["request"][0]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(amendParams, amendRequest);
@@ -423,9 +431,9 @@ inline void ByBit::preparePrivateReq(const json &data, http::request<http::strin
     req.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(data, bot, Timestamp));
     req.body() = data.dump();
   }
-  else
+  else {
     req.set("X-BAPI-SIGN", Encryption::GenerateGetSignature(data, bot, Timestamp));
-
+  }
   req.prepare_payload();
 }
 
