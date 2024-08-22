@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <thread>
+#include <fstream>
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
 #include <boost/beast/ssl.hpp>
@@ -11,9 +12,8 @@
 #include <boost/asio/strand.hpp>
 #include <boost/asio/high_resolution_timer.hpp>
 #include <nlohmann/json.hpp>
-#include <fstream>
-#include "BotBase.h"
-#define currTimeMS duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count()
+#include <boost/format.hpp>
+#include "utility_functions.h"
 
 namespace beast = boost::beast;
 namespace http = beast::http;
@@ -26,7 +26,6 @@ using Request = http::request<http::string_body>;
 using Stream = beast::ssl_stream<beast::tcp_stream>;
 using json = nlohmann::json;
 
-//TODO: add noexcept and const
 class ByBit {
   public:
   //bool shortNotFilled = true, longNotFilled = true;
@@ -48,7 +47,9 @@ class ByBit {
   void write_public_Socket(const std::string &);
   void webSocket_close();
   std::string get_socket_data() const noexcept;
-  void setCallback(const std::function<void(beast::error_code, size_t)> &);
+  void setCallbacks(const std::function<void(beast::error_code, size_t)> &,
+                    const std::function<void(beast::error_code, size_t)> &);
+  void resetSyncTimer();
 
   void cancelOrders();
   void placeBoth(std::pair<long double, long double>);
@@ -81,6 +82,7 @@ class ByBit {
   http::request<http::string_body> getBasePublicReq(const std::string &, http::verb) const;
   inline void preparePrivateReq(const json &, http::request<http::string_body> &) const;
   void beginAsyncPings(const boost::system::error_code &ec);
+  void beginSynchronization(const boost::system::error_code &ec);
   void chasePrice(const boost::system::error_code &ec);
   void initOrderReq();
   void initPriceReq();
@@ -92,10 +94,10 @@ class ByBit {
   std::string priceFmt, qtyFmt;
   std::string &longLinkId, &shortLinkId;
   std::ofstream &output;
-  std::function<void(beast::error_code, size_t)> callback;
+  std::function<void(beast::error_code, size_t)> main_callback, sync_callback, callback;
 
   net::io_context ioc, ioc_webSocket;
-  net::steady_timer m_timer;
+  net::steady_timer ping_timer, sync_timer;
   net::high_resolution_timer chaseTimer;
   ssl::context ctx{ssl::context::tlsv12_client}, ctx_webSocket{ssl::context::tlsv12_client};
   tcp::resolver resolver{ioc}, resolver_webSocket{ioc_webSocket};

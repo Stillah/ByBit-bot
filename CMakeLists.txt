@@ -25,8 +25,9 @@ find_package(Boost REQUIRED COMPONENTS asio beast json)
 add_executable(COMPLICATED
         src/BotBase.cpp
         src/BotBase.h
-        src/Encryption.hpp
-        src/Strategy.hpp
+        src/utility_functions.cpp
+        src/utility_functions.h
+        src/Strategy.h
         src/ByBit.cpp
         src/ByBit.h
 )

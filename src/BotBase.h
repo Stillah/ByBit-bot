@@ -12,5 +12,5 @@ struct BotBase {
   std::string api_key, secret_key, ticker, host, webSocketPrivate,
   webSocketPublic, recvWindow, port, leverage;
   double quantity, takeProfit, stopLoss;
-  int32_t updatePriceInterval;
+  int32_t updatePriceInterval, syncOrdersInterval;
 };

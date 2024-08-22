@@ -1,5 +1,4 @@
-#include "BotBase.h"
-#include "Strategy.hpp"
+#include "Strategy.h"
 
 [[noreturn]] int main() {
   const std::string logFile = "logs/Bybit log " + currDateAndTime();
