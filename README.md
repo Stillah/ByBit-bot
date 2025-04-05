@@ -49,5 +49,6 @@ In parameters.json the following parameters can be specified:
 2) Boost asio
 3) Boost format
 4) nlohmann json
+5) openSSL
 
 Downloading C++ libraries might be complicated, I recommend to use vcpkg
