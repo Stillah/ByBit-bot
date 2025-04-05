@@ -1,0 +1,16 @@
+{
+  "api_key" : "xxxxxxxxxxxxxxxxxx",
+  "secret_key" : "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+  "ticker" : "ETHUSDT",
+  "host" : "api-demo.bybit.com",
+  "webSocketPrivate" : "stream-demo.bybit.com",
+  "webSocketPublic" : "stream.bybit.com",
+  "recvWindow" : "3000",
+  "leverage" : "5",
+  "port" : "443",
+  "takeProfit": 0.082,
+  "stopLoss": 0.105,
+  "approxQuantityUSD" : 1000,
+  "updatePriceInterval": 1000,
+  "syncOrdersInterval": 3600
+}
