@@ -22,6 +22,7 @@ BotBase::BotBase(const std::string &fileName) {
     takeProfit = parameters["takeProfit"];
     stopLoss = parameters["stopLoss"];
     updatePriceInterval = parameters["updatePriceInterval"];
+    syncOrdersInterval = parameters["syncOrdersInterval"];
     file.close();
   }
   catch (std::exception &e) {

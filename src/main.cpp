@@ -1,10 +1,10 @@
-#include "BotBase.h"
-#include "Strategy.hpp"
+#include "Strategy.h"
 
 [[noreturn]] int main() {
   const std::string logFile = "logs/Bybit log " + currDateAndTime();
   std::ofstream output(logFile, std::ios::app);
 
+  std::cout << "Bot is working, find logs at " << logFile << std::endl;
   output << "----------------------------"
             "     Program started at " << currDateAndTime() << "     "
             "----------------------------\n" << std::endl;

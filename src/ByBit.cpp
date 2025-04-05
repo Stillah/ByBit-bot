@@ -1,13 +1,11 @@
 #include "ByBit.h"
-#include "Encryption.hpp"
-#include <boost/format.hpp>
-
 
 ByBit::ByBit(const std::string &file, std::ofstream &out, std::string &longLinkIdRef, std::string &shortLinkIdRef)
   : longLinkId(longLinkIdRef),
     shortLinkId(shortLinkIdRef),
     output(out),
-    m_timer(ioc_webSocket),
+    ping_timer(ioc_webSocket),
+    sync_timer(ioc_webSocket),
     chaseTimer(ioc_webSocket) {
   output << "Bot started construction" << std::endl;
   bot = BotBase(file);
@@ -45,8 +43,15 @@ void ByBit::read_private_Socket() {
 }
 
 void ByBit::ws_ioc_run() {
-  m_timer.async_wait([this](const boost::system::error_code &ec) { beginAsyncPings(ec); });
+  ping_timer.expires_after(net::chrono::seconds(10));
+  ping_timer.async_wait([this](const boost::system::error_code &ec) { beginAsyncPings(ec); });
+
+  chaseTimer.expires_after(net::chrono::milliseconds(bot.updatePriceInterval));
   chaseTimer.async_wait([this](const boost::system::error_code &ec) { chasePrice(ec); });
+
+  sync_timer.expires_after(net::chrono::seconds(bot.syncOrdersInterval));
+  sync_timer.async_wait([this](const boost::system::error_code &ec) { beginSynchronization(ec); });
+
   ioc_webSocket.run();
 }
 
@@ -65,8 +70,19 @@ void ByBit::webSocket_close() {
 
 std::string ByBit::get_socket_data() const noexcept { return beast::buffers_to_string(wsBuffer.data()); }
 
-void ByBit::setCallback(const std::function<void(beast::error_code, size_t)> &new_callback) {
-  callback = new_callback;
+void ByBit::setCallbacks(const std::function<void(beast::error_code, size_t)> &main,
+                         const std::function<void(beast::error_code, size_t)> &sync) {
+  main_callback = main;
+  sync_callback = sync;
+  callback = [this](beast::error_code ec, size_t messageSize) {
+    if (needToSync) sync_callback(ec, messageSize);
+    else main_callback(ec, messageSize);
+  };
+}
+
+void ByBit::resetSyncTimer() {
+  sync_timer.expires_after(net::chrono::seconds(bot.syncOrdersInterval));
+  sync_timer.async_wait([this](const boost::system::error_code &ec) { beginSynchronization(ec); });
 }
 
 void ByBit::cancelOrders() {
@@ -87,17 +103,19 @@ void ByBit::placeBoth(std::pair<long double, long double> price) {
   auto [bidPrice, askPrice] = price;
 
   // setting up long parameters
+  bidPrice -= delta;
   orderParams["request"][0] = longPosParams;
-  orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  orderParams["request"][0]["price"] = priceToStr(bidPrice);
+  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   orderParams["request"][0]["orderLinkId"] = longLinkId;
 
   // setting up short parameters
+  askPrice += delta;
   orderParams["request"][1] = shortPosParams;
-  orderParams["request"][1]["price"] = priceToStr(askPrice + delta);
-  orderParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
-  orderParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  orderParams["request"][1]["price"] = priceToStr(askPrice);
+  orderParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5 * delta);
+  orderParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5 * delta);
   orderParams["request"][1]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(orderParams, orderRequest);
@@ -110,10 +128,11 @@ void ByBit::placeBoth(std::pair<long double, long double> price) {
 }
 
 void ByBit::placeLong(long double bidPrice) {
+  bidPrice -= delta;
   orderParams["request"][0] = longPosParams;
-  orderParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  orderParams["request"][0]["price"] = priceToStr(bidPrice);
+  orderParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  orderParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   orderParams["request"][0]["orderLinkId"] = longLinkId;
 
   preparePrivateReq(orderParams, orderRequest);
@@ -129,10 +148,11 @@ void ByBit::placeLong(long double bidPrice) {
 }
 
 void ByBit::placeShort(long double askPrice) {
+  askPrice += delta;
   orderParams["request"][0] = shortPosParams;
-  orderParams["request"][0]["price"] = priceToStr(askPrice + delta);
-  orderParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
-  orderParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  orderParams["request"][0]["price"] = priceToStr(askPrice);
+  orderParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5 * delta);
+  orderParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5 * delta);
   orderParams["request"][0]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(orderParams, orderRequest);
@@ -151,17 +171,19 @@ void ByBit::changeBoth(std::pair<long double, long double> price) {
   auto [bidPrice, askPrice] = price;
 
   // setting up long changes
+  bidPrice -= delta;
   amendParams["request"][0]["symbol"] = bot.ticker;
-  amendParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  amendParams["request"][0]["price"] = priceToStr(bidPrice);
+  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   amendParams["request"][0]["orderLinkId"] = longLinkId;
 
   // setting up short changes
+  askPrice += delta;
   amendParams["request"][1]["symbol"] = bot.ticker;
-  amendParams["request"][1]["price"] = priceToStr(askPrice + delta);
-  amendParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit);
-  amendParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  amendParams["request"][1]["price"] = priceToStr(askPrice);
+  amendParams["request"][1]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5 * delta);
+  amendParams["request"][1]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5 * delta);
   amendParams["request"][1]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(amendParams, amendRequest);
@@ -177,10 +199,11 @@ void ByBit::changeBoth(std::pair<long double, long double> price) {
 }
 
 void ByBit::changeLong(long double bidPrice) {
+  bidPrice -= delta;
   amendParams["request"][0]["symbol"] = bot.ticker;
-  amendParams["request"][0]["price"] = priceToStr(bidPrice - delta);
-  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit);
-  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss);
+  amendParams["request"][0]["price"] = priceToStr(bidPrice);
+  amendParams["request"][0]["takeProfit"] = priceToStr(bidPrice + bidPrice * takeProfit + delta);
+  amendParams["request"][0]["stopLoss"] = priceToStr(bidPrice - bidPrice * stopLoss + delta);
   amendParams["request"][0]["orderLinkId"] = longLinkId;
 
   preparePrivateReq(amendParams, amendRequest);
@@ -196,10 +219,11 @@ void ByBit::changeLong(long double bidPrice) {
 }
 
 void ByBit::changeShort(long double askPrice) {
+  askPrice += delta;
   amendParams["request"][0]["symbol"] = bot.ticker;
-  amendParams["request"][0]["price"] = priceToStr(askPrice + delta);
-  amendParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - delta);
-  amendParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss);
+  amendParams["request"][0]["price"] = priceToStr(askPrice);
+  amendParams["request"][0]["takeProfit"] = priceToStr(askPrice - askPrice * takeProfit - 1.5 * delta);
+  amendParams["request"][0]["stopLoss"] = priceToStr(askPrice + askPrice * stopLoss - 1.5 * delta);
   amendParams["request"][0]["orderLinkId"] = shortLinkId;
 
   preparePrivateReq(amendParams, amendRequest);
@@ -423,9 +447,9 @@ inline void ByBit::preparePrivateReq(const json &data, http::request<http::strin
     req.set("X-BAPI-SIGN", Encryption::GeneratePostSignature(data, bot, Timestamp));
     req.body() = data.dump();
   }
-  else
+  else {
     req.set("X-BAPI-SIGN", Encryption::GenerateGetSignature(data, bot, Timestamp));
-
+  }
   req.prepare_payload();
 }
 
@@ -434,19 +458,32 @@ void ByBit::beginAsyncPings(const boost::system::error_code &ec) {
     output << "(timer) " << ec.message() << std::endl;
     throw std::exception();
   }
-  wsPrivate.async_ping(R"({"op":"ping"})",
-                       [this](const beast::error_code &ec) {
-                         if (ec) {
-                           output << "(ping) " << ec.message();
-                           throw std::exception();
-                         }
-                         //output << "Pinged [" << currTimeMS << "]" << std::endl;
-                         this->m_timer.expires_after(net::chrono::seconds(10));
-                         this->m_timer
-                           .async_wait([this](const boost::system::error_code &ec) { this->beginAsyncPings(ec); }
-                           );
-                       }
+  wsPrivate.async_write(net::buffer(R"({"op":"ping"})"),
+                        [this](const beast::error_code &ec, size_t) {
+                          if (ec) {
+                            output << "(ping) " << ec.message();
+                            throw std::exception();
+                          }
+                          //output << "Pinged [" << currTimeMS << "]" << std::endl;
+                          this->ping_timer.expires_after(net::chrono::seconds(10));
+                          this->ping_timer
+                            .async_wait([this](const boost::system::error_code &ec) { this->beginAsyncPings(ec); }
+                            );
+                        }
   );
+}
+
+void ByBit::beginSynchronization(const boost::system::error_code &ec) {
+  if (ec == boost::asio::error::operation_aborted) { return; }
+  else if (ec) {
+      output << "(sync) " << ec.message() << std::endl;
+      throw std::exception();
+    }
+  if (!needToSync) output << "Waiting for both orders to execute. " << currDateAndTime() << std::endl;
+  longPosParams["qty"] = shortPosParams["qty"] = qtyToStr(bot.quantity / (2 * getTickerPrice().first));
+  needToSync = true;
+  sync_timer.expires_after(net::chrono::seconds(bot.syncOrdersInterval));
+  sync_timer.async_wait([this](const boost::system::error_code &ec) { this->beginSynchronization(ec); });
 }
 
 void ByBit::chasePrice(const boost::system::error_code &ec) {
