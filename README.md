@@ -41,3 +41,13 @@ In parameters.json the following parameters can be specified:
   "syncOrdersInterval": 3600 //seconds, update trading quanity to match approxQuantityUSD
   
 }
+
+
+# Dependencies
+
+1) Boost beast
+2) Boost asio
+3) Boost format
+4) nlohmann json
+
+Downloading C++ libraries might be complicated, I recommend to use vcpkg
