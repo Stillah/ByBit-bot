@@ -3,7 +3,7 @@ set(CMAKE_TOOLCHAIN_FILE "vcpkg/scripts/buildsystems/vcpkg.cmake" CACHE STRING
 "Vcpkg toolchain file")
 #SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DASIO_STANDALONE -pthread")
 SET(CMAKE_CXX_FLAGS "-Wall -Wextra -O3")
-project(COMPLICATED)
+project(bybit_bot)
 
 set(CMAKE_CXX_STANDARD 23)
 
@@ -12,7 +12,7 @@ find_package(nlohmann_json REQUIRED)
 find_package(OpenSSL REQUIRED) #Needed for part of boost/asio
 find_package(Boost REQUIRED COMPONENTS asio beast json)
 
-add_executable(COMPLICATED
+add_executable(bybit_bot
         src/BotBase.cpp
         src/BotBase.h
         src/utility_functions.cpp
@@ -22,9 +22,9 @@ add_executable(COMPLICATED
         src/ByBit.h
 )
 
-target_sources(COMPLICATED PRIVATE src/main.cpp)
+target_sources(bybit_bot PRIVATE src/main.cpp)
 
-target_link_libraries(COMPLICATED PRIVATE
+target_link_libraries(bybit_bot PRIVATE
         ZLIB::ZLIB
         OpenSSL::SSL
         OpenSSL::Crypto
